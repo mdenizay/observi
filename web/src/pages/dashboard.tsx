@@ -3,13 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
-  CheckCircle2,
   ChevronRight,
-  CircleAlert,
   Clock,
-  Hourglass,
-  Eye,
-  EyeOff,
   LayoutGrid,
   List,
   PauseCircle,
@@ -66,125 +61,6 @@ function readView(): View {
 }
 
 /* ---------------------------------------------------------------- hero + tiles */
-
-const HERO_KEY = 'observi-hide-summary'
-
-function readHeroHidden() {
-  try {
-    return localStorage.getItem(HERO_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function Hero({
-  monitors,
-  counts,
-  isAdmin,
-  onHide,
-}: {
-  monitors: MonitorSummary[] | undefined
-  counts: Record<Eff, number>
-  isAdmin: boolean
-  onHide: () => void
-}) {
-  const { t } = useI18n()
-
-  const stats = useMemo(() => {
-    const active = (monitors ?? []).filter((m) => m.active)
-    const lat = active.map((m) => m.latency_ms).filter((v): v is number => v !== null)
-    const upt = active.map((m) => m.uptime_24h).filter((v): v is number => v !== null)
-    const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null)
-    return { latency: avg(lat), uptime: avg(upt) }
-  }, [monitors])
-
-  const total = monitors?.length ?? 0
-  let tone: 'up' | 'down' | 'pending' | 'muted' = 'up'
-  let title = ''
-  let Icon: LucideIcon = CheckCircle2
-  if (!monitors || total === 0) {
-    tone = 'muted'
-    title = t('dash.heroEmpty')
-    Icon = Hourglass
-  } else if (counts.down > 0) {
-    tone = 'down'
-    title = t('dash.nDown', { count: counts.down })
-    Icon = CircleAlert
-  } else if (counts.pending > 0) {
-    tone = 'pending'
-    title = t('dash.nPending', { count: counts.pending })
-    Icon = Hourglass
-  } else if (counts.up === 0) {
-    tone = 'muted'
-    title = t('dash.allPaused')
-    Icon = PauseCircle
-  } else {
-    title = t('dash.allOperational')
-  }
-
-  const iconCls = {
-    up: 'bg-up/12 text-up ring-up/25',
-    down: 'bg-down/12 text-down ring-down/25',
-    pending: 'bg-pending/12 text-pending ring-pending/25',
-    muted: 'bg-muted text-muted-foreground ring-border',
-  }[tone]
-  const glow = { up: 'bg-up/20', down: 'bg-down/25', pending: 'bg-pending/20', muted: 'bg-primary/10' }[tone]
-
-  const stat = (label: string, value: string) => (
-    <div className="min-w-0">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="num mt-0.5 text-sm font-medium">{value}</div>
-    </div>
-  )
-
-  return (
-    <section className="bg-card shadow-card relative overflow-hidden rounded-2xl border">
-      <div
-        className="graticule pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_80%_100%_at_0%_0%,black,transparent_75%)]"
-        aria-hidden
-      />
-      <div className={cn('pointer-events-none absolute -top-28 -left-20 size-72 rounded-full blur-3xl', glow)} aria-hidden />
-      <button
-        type="button"
-        onClick={onHide}
-        aria-label={t('dash.hideSummary')}
-        title={t('dash.hideSummary')}
-        className="text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring/50 absolute top-2.5 right-2.5 z-10 flex size-7 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-[3px]"
-      >
-        <EyeOff className="size-4" />
-      </button>
-      <div className="relative flex flex-col gap-5 p-5 pr-12 sm:p-6 sm:pr-14 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset', iconCls)}>
-            <Icon className="size-6" />
-          </div>
-          <div className="min-w-0">
-            {monitors ? (
-              <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">{title}</h1>
-            ) : (
-              <Skeleton className="h-7 w-56" />
-            )}
-            {monitors && total > 0 && (
-              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
-                {stat(t('cmd.monitors'), formatNumber(total))}
-                {stat(t('hero.avg'), stats.latency === null ? '—' : formatLatency(stats.latency))}
-                {stat(t('hero.uptime'), stats.uptime === null ? '—' : formatUptime(stats.uptime, 2))}
-              </div>
-            )}
-          </div>
-        </div>
-        {isAdmin && (
-          <Button asChild className="self-start md:self-center">
-            <Link to="/monitors/new">
-              <Plus />
-              {t('nav.newMonitor')}
-            </Link>
-          </Button>
-        )}
-      </div>
-    </section>
-  )
-}
 
 function StatusTiles({
   counts,
@@ -437,16 +313,6 @@ export function DashboardPage() {
   const [filter, setFilter] = useState<Eff | null>(null)
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
-  const [heroHidden, setHeroHiddenState] = useState(readHeroHidden)
-  const setHeroHidden = (hidden: boolean) => {
-    setHeroHiddenState(hidden)
-    try {
-      if (hidden) localStorage.setItem(HERO_KEY, '1')
-      else localStorage.removeItem(HERO_KEY)
-    } catch {
-      /* storage unavailable */
-    }
-  }
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
   const narrowing = q.trim() !== '' || filter !== null
 
@@ -576,7 +442,6 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
-      {!heroHidden && <Hero monitors={monitors} counts={counts} isAdmin={isAdmin} onHide={() => setHeroHidden(true)} />}
       <StatusTiles counts={counts} loaded={!!monitors} filter={filter} onToggle={toggleFilter} />
 
       {/* Toolbar */}
@@ -620,27 +485,13 @@ export function DashboardPage() {
             {viewBtn('grid', LayoutGrid, t('view.grid'))}
             {viewBtn('list', List, t('view.list'))}
           </div>
-          {heroHidden && (
-            <>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-9"
-                onClick={() => setHeroHidden(false)}
-                aria-label={t('dash.showSummary')}
-                title={t('dash.showSummary')}
-              >
-                <Eye />
-              </Button>
-              {isAdmin && (
-                <Button asChild className="max-sm:size-9 max-sm:px-0">
-                  <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
-                    <Plus />
-                    <span className="max-sm:sr-only">{t('nav.newMonitor')}</span>
-                  </Link>
-                </Button>
-              )}
-            </>
+          {isAdmin && (
+            <Button asChild className="max-sm:size-9 max-sm:px-0">
+              <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
+                <Plus />
+                <span className="max-sm:sr-only">{t('nav.newMonitor')}</span>
+              </Link>
+            </Button>
           )}
         </div>
       </div>
