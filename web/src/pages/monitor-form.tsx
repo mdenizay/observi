@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronRight, Loader2, Webhook } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Globe, Loader2, Network, TextSearch, Webhook } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field, SwitchField } from '@/components/field'
@@ -48,6 +48,12 @@ interface FormState {
 }
 
 const NO_GROUP = 'none'
+
+const typeOptions = [
+  { value: 'http', icon: Globe, label: 'mf.typeHttpShort', desc: 'mf.typeHttpDesc' },
+  { value: 'keyword', icon: TextSearch, label: 'mf.typeKeywordShort', desc: 'mf.typeKeywordDesc' },
+  { value: 'tcp', icon: Network, label: 'mf.typeTcpShort', desc: 'mf.typeTcpDesc' },
+] as const
 
 const defaults: FormState = {
   type: 'http',
@@ -279,26 +285,44 @@ export function MonitorFormPage() {
           </CardContent>
         </Card>
       ) : (
-        <form onSubmit={submit} className="grid items-start gap-4 lg:grid-cols-2" noValidate>
-          <div className="grid content-start gap-4">
+        <form onSubmit={submit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2" noValidate>
+          <div className="grid min-w-0 grid-cols-1 content-start gap-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">{t('mf.general')}</CardTitle>
+                <CardDescription>{t('mf.generalDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
-                <Field label={t('mf.type')} htmlFor="type">
-                  <Select value={form.type} onValueChange={(v) => set('type', v as MonitorType)}>
-                    <SelectTrigger id="type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="http">{t('type.http')}</SelectItem>
-                      <SelectItem value="keyword">{t('type.keyword')}</SelectItem>
-                      <SelectItem value="tcp">{t('type.tcp')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label={t('common.name')} htmlFor="name" error={errors.name}>
+                <div className="grid gap-1.5 sm:col-span-2">
+                  <span className="text-sm leading-none font-medium" id="type-label">
+                    {t('mf.type')}
+                  </span>
+                  <div role="radiogroup" aria-labelledby="type-label" className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                    {typeOptions.map((o) => {
+                      const on = form.type === o.value
+                      return (
+                        <button
+                          key={o.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => set('type', o.value)}
+                          className={cn(
+                            'hover:border-border-strong focus-visible:ring-ring/50 flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
+                            on && 'border-primary/60 bg-primary/[0.06] ring-primary/25 ring-2',
+                          )}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <o.icon className={cn('size-4', on ? 'text-primary' : 'text-muted-foreground')} />
+                            {t(o.label)}
+                          </span>
+                          <span className="text-muted-foreground text-xs leading-snug">{t(o.desc)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <Field label={t('common.name')} htmlFor="name" error={errors.name} className="sm:col-span-2">
                   <Input
                     id="name"
                     value={form.name}
@@ -423,7 +447,7 @@ export function MonitorFormPage() {
                   <CollapsibleTrigger className="flex w-full items-center gap-2 px-4 py-4 text-left">
                     <ChevronRight className={cn('size-4 transition-transform', advanced && 'rotate-90')} />
                     <span className="font-semibold">{t('mf.advanced')}</span>
-                    <span className="text-muted-foreground text-sm">{t('mf.advancedHint')}</span>
+                    <span className="text-muted-foreground truncate text-sm">{t('mf.advancedDesc')}</span>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2">
@@ -454,10 +478,11 @@ export function MonitorFormPage() {
               </Card>
             )}
           </div>
-          <div className="grid content-start gap-4">
+          <div className="grid min-w-0 grid-cols-1 content-start gap-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">{t('mf.checkSettings')}</CardTitle>
+                <CardDescription>{t('mf.checkSettingsDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
                 <Field label={t('mf.interval')} htmlFor="interval" error={errors.interval} hint={t('mf.intervalHint')}>
@@ -610,7 +635,7 @@ export function MonitorFormPage() {
             </Card>
           </div>
 
-          <div className="flex justify-end gap-2 pb-6 lg:col-span-2">
+          <div className="bg-background/85 sticky bottom-0 z-10 -mx-3 flex justify-end gap-2 border-t px-3 py-3 backdrop-blur-md sm:-mx-4 sm:px-4 lg:col-span-2 lg:-mx-6 lg:px-6">
             <Button asChild variant="outline">
               <Link to={backTo}>{t('common.cancel')}</Link>
             </Button>

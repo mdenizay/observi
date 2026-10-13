@@ -67,7 +67,28 @@ export function App() {
       </Routes>
       </Suspense>
       </ErrorBoundary>
-      <Toaster theme={resolved} position="top-right" richColors closeButton />
+      <Toaster
+        theme={resolved}
+        position="bottom-right"
+        closeButton
+        style={
+          {
+            '--normal-bg': 'var(--popover)',
+            '--normal-text': 'var(--popover-foreground)',
+            '--normal-border': 'var(--border)',
+            '--border-radius': '12px',
+          } as React.CSSProperties
+        }
+        toastOptions={{
+          classNames: {
+            toast: 'font-sans shadow-pop! text-[13px]!',
+            success: '[&_[data-icon]]:text-up',
+            error: '[&_[data-icon]]:text-down',
+            warning: '[&_[data-icon]]:text-pending',
+            description: 'text-muted-foreground!',
+          },
+        }}
+      />
     </>
   )
 }

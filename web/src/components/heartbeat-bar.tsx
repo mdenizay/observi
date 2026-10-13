@@ -14,6 +14,7 @@ const color: Record<number, string> = {
 }
 
 const sizes = {
+  xs: { w: 3, h: 14, gap: 2, cls: 'rounded-full' },
   sm: { w: 4, h: 16, gap: 2, cls: 'rounded-full' },
   md: { w: 6, h: 22, gap: 2, cls: 'rounded-full' },
   lg: { w: 8, h: 28, gap: 3, cls: 'rounded-full' },

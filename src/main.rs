@@ -32,6 +32,7 @@ Usage:
                                           or generated and printed)
   observi passwd <username>               Reset a password (same password rules)
   observi import-kuma <kuma.db>           Import HTTP/keyword/port monitors from Uptime Kuma
+  observi health                          Exit 0 if the local server responds (for health checks)
   observi --version
 
 Environment:
@@ -39,6 +40,9 @@ Environment:
   OBSERVI_LISTEN     listen address (default 127.0.0.1:3001)
   OBSERVI_RETENTION  heartbeat retention in days (default 90)
   OBSERVI_LANG       language of notifications: en (default) or tr
+  OBSERVI_ADMIN_USER / OBSERVI_ADMIN_PASSWORD
+                     first superadmin created on an empty database (password
+                     generated and logged once if unset)
   RUST_LOG           log filter (default info)";
 
 fn env(key: &str, default: &str) -> String {
@@ -54,6 +58,9 @@ fn main() -> Result<()> {
 
     i18n::init(&env("OBSERVI_LANG", "en"));
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("health") {
+        return health();
+    }
     if matches!(args.first().map(String::as_str), Some("--version" | "-V" | "version")) {
         println!("observi {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -115,7 +122,53 @@ fn password_from_env() -> (String, bool) {
     }
 }
 
+/// Exit 0 if the local server answers HTTP; used by container health checks.
+/// Plain std networking so it works in a minimal image without curl.
+fn health() -> Result<()> {
+    use std::io::{Read, Write};
+    let listen = env("OBSERVI_LISTEN", "127.0.0.1:3001");
+    let port = listen.rsplit(':').next().unwrap_or("3001");
+    let addr = format!("127.0.0.1:{port}");
+    let mut stream = std::net::TcpStream::connect_timeout(&addr.parse()?, Duration::from_secs(3))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(b"GET /api/branding HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
+    let mut buf = [0u8; 16];
+    let n = stream.read(&mut buf)?;
+    if buf[..n].starts_with(b"HTTP/1.1 200") || buf[..n].starts_with(b"HTTP/1.0 200") {
+        Ok(())
+    } else {
+        bail!("unhealthy")
+    }
+}
+
+/// On an empty database, create the first superadmin from OBSERVI_ADMIN_USER /
+/// OBSERVI_ADMIN_PASSWORD (generated and logged once when unset). Handy for containers.
+fn bootstrap_admin(db: &Db) -> Result<()> {
+    db.blocking(|c| {
+        let users: i64 = c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
+        if users > 0 {
+            return Ok(());
+        }
+        let username = env("OBSERVI_ADMIN_USER", "admin").trim().to_lowercase();
+        let (password, generated) = match std::env::var("OBSERVI_ADMIN_PASSWORD") {
+            Ok(p) if p.chars().count() >= 8 => (p, false),
+            Ok(_) => bail!("OBSERVI_ADMIN_PASSWORD must be at least 8 characters"),
+            Err(_) => (auth::random_hex(9), true),
+        };
+        auth::create_user(c, &username, "Administrator", &password, Role::Superadmin)?;
+        if generated {
+            tracing::warn!(
+                "created superadmin '{username}' with password: {password} (shown once; change it under Settings)"
+            );
+        } else {
+            tracing::info!("created superadmin '{username}' from OBSERVI_ADMIN_PASSWORD");
+        }
+        Ok(())
+    })
+}
+
 fn serve(db: Db) -> Result<()> {
+    bootstrap_admin(&db)?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .max_blocking_threads(8)

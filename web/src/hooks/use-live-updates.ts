@@ -1,8 +1,28 @@
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { Beat, BeatEvent, Monitor, MonitorSummary } from '@/lib/types'
 
 const MAX_LIST_BEATS = 50
+
+// ---- connection status (for the "Live" indicator) ----
+export type LiveStatus = 'connecting' | 'live' | 'reconnecting'
+let liveStatus: LiveStatus = 'connecting'
+const statusListeners = new Set<() => void>()
+function setLiveStatus(s: LiveStatus) {
+  if (s === liveStatus) return
+  liveStatus = s
+  statusListeners.forEach((l) => l())
+}
+export function useLiveStatus(): LiveStatus {
+  return useSyncExternalStore(
+    (cb) => {
+      statusListeners.add(cb)
+      return () => statusListeners.delete(cb)
+    },
+    () => liveStatus,
+    () => 'connecting',
+  )
+}
 
 function applyBeat(qc: QueryClient, ev: BeatEvent) {
   const beat: Beat = { t: ev.t, s: ev.s, l: ev.l, m: ev.m }
@@ -60,6 +80,7 @@ export function useLiveUpdates(enabled: boolean) {
     const connect = () => {
       es = new EventSource('/api/events')
       es.addEventListener('open', () => {
+        setLiveStatus('live')
         if (hadError) {
           // Resync anything missed while disconnected.
           qc.invalidateQueries({ queryKey: ['monitors'] })
@@ -78,6 +99,7 @@ export function useLiveUpdates(enabled: boolean) {
       })
       es.addEventListener('error', () => {
         hadError = true
+        setLiveStatus('reconnecting')
         // Browser retries on network errors by itself; a non-2xx response
         // (e.g. 401) closes the stream for good, so retry manually.
         if (es?.readyState === EventSource.CLOSED && !disposed) {
@@ -90,6 +112,7 @@ export function useLiveUpdates(enabled: boolean) {
     }
     connect()
     return () => {
+      setLiveStatus('connecting')
       disposed = true
       clearTimeout(retry)
       es?.close()

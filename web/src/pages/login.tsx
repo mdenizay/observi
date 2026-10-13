@@ -47,21 +47,29 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-dvh items-center justify-center p-4">
-      <div className="absolute top-4 right-4 flex items-center gap-1">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
+      <div
+        aria-hidden
+        className="graticule pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_60%_55%_at_50%_42%,black,transparent_80%)]"
+      />
+      <div
+        aria-hidden
+        className="bg-primary/20 pointer-events-none absolute top-[18%] left-1/2 size-[34rem] -translate-x-1/2 rounded-full opacity-60 blur-[120px] dark:opacity-40"
+      />
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
         <LanguageSwitcher />
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm">
+      <div className="relative w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <BrandMark className="size-10" />
+          <BrandMark className="shadow-raised size-11 rounded-xl" />
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">{name}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
             <p className="text-muted-foreground text-sm">{t('login.subtitle')}</p>
           </div>
         </div>
-        <Card>
-          <CardContent>
+        <Card className="shadow-pop rounded-2xl py-6">
+          <CardContent className="px-6">
             <form onSubmit={submit} className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="username">{t('common.username')}</Label>

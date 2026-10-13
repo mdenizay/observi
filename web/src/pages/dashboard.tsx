@@ -8,23 +8,29 @@ import {
   CircleAlert,
   Clock,
   Hourglass,
+  LayoutGrid,
+  List,
   PauseCircle,
   Plus,
   Search,
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { EmptyState } from '@/components/empty-state'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
 import { MonitorDetail } from '@/components/monitor-detail'
+import { Sparkline } from '@/components/sparkline'
 import { StatusBadge, statusDot } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Kbd } from '@/components/ui/kbd'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useIsAdmin } from '@/hooks/use-auth'
 import { useMonitors } from '@/hooks/use-monitors'
 import { useNow } from '@/hooks/use-now'
+import { DASHBOARD_SEARCH_ID } from '@/hooks/use-shortcuts'
 import { useI18n } from '@/i18n'
 import { formatLatency, formatNumber, formatRelative, formatUptime, monitorTarget } from '@/lib/format'
 import type { MonitorSummary } from '@/lib/types'
@@ -32,6 +38,7 @@ import { cn } from '@/lib/utils'
 
 type Eff = 'up' | 'down' | 'pending' | 'paused'
 type Sort = 'status' | 'name' | 'slowest'
+type View = 'grid' | 'list'
 
 function effectiveStatus(m: MonitorSummary): Eff {
   if (!m.active) return 'paused'
@@ -42,10 +49,18 @@ function effectiveStatus(m: MonitorSummary): Eff {
 const statusOrder: Record<Eff, number> = { down: 0, pending: 1, up: 2, paused: 3 }
 
 const tileStyle: Record<Eff, { icon: LucideIcon; text: string; active: string }> = {
-  up: { icon: ArrowUpCircle, text: 'text-up', active: 'border-up/50 bg-up/5 ring-up/30' },
-  down: { icon: ArrowDownCircle, text: 'text-down', active: 'border-down/50 bg-down/5 ring-down/30' },
-  pending: { icon: Clock, text: 'text-pending', active: 'border-pending/50 bg-pending/5 ring-pending/30' },
-  paused: { icon: PauseCircle, text: 'text-paused', active: 'border-paused/50 bg-paused/5 ring-paused/30' },
+  up: { icon: ArrowUpCircle, text: 'text-up', active: 'border-up/45 bg-up/[0.06] ring-up/25' },
+  down: { icon: ArrowDownCircle, text: 'text-down', active: 'border-down/45 bg-down/[0.06] ring-down/25' },
+  pending: { icon: Clock, text: 'text-pending', active: 'border-pending/45 bg-pending/[0.06] ring-pending/25' },
+  paused: { icon: PauseCircle, text: 'text-paused', active: 'border-paused/45 bg-paused/[0.06] ring-paused/25' },
+}
+
+function readView(): View {
+  try {
+    return localStorage.getItem('observi-dashboard-view') === 'list' ? 'list' : 'grid'
+  } catch {
+    return 'grid'
+  }
 }
 
 /* ---------------------------------------------------------------- hero + tiles */
@@ -73,9 +88,7 @@ function Hero({
   let tone: 'up' | 'down' | 'pending' | 'muted' = 'up'
   let title = ''
   let Icon: LucideIcon = CheckCircle2
-  if (!monitors) {
-    tone = 'muted'
-  } else if (total === 0) {
+  if (!monitors || total === 0) {
     tone = 'muted'
     title = t('dash.heroEmpty')
     Icon = Hourglass
@@ -95,50 +108,58 @@ function Hero({
     title = t('dash.allOperational')
   }
 
-  const toneCls = {
-    up: 'bg-up/12 text-up',
-    down: 'bg-down/12 text-down',
-    pending: 'bg-pending/12 text-pending',
-    muted: 'bg-muted text-muted-foreground',
+  const iconCls = {
+    up: 'bg-up/12 text-up ring-up/25',
+    down: 'bg-down/12 text-down ring-down/25',
+    pending: 'bg-pending/12 text-pending ring-pending/25',
+    muted: 'bg-muted text-muted-foreground ring-border',
   }[tone]
+  const glow = { up: 'bg-up/20', down: 'bg-down/25', pending: 'bg-pending/20', muted: 'bg-primary/10' }[tone]
+
+  const stat = (label: string, value: string) => (
+    <div className="min-w-0">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="num mt-0.5 text-sm font-medium">{value}</div>
+    </div>
+  )
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3.5">
-        <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl', toneCls)}>
-          <Icon className="size-6" />
-        </div>
-        <div className="min-w-0">
-          {monitors ? (
-            <>
-              <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-              {total > 0 && (
-                <p className="text-muted-foreground mt-0.5 text-sm tabular-nums">
-                  {t('dash.heroSub', {
-                    count: total,
-                    latency: stats.latency === null ? '—' : formatLatency(stats.latency),
-                    uptime: stats.uptime === null ? '—' : formatUptime(stats.uptime, 2),
-                  })}
-                </p>
-              )}
-            </>
-          ) : (
-            <>
+    <section className="bg-card shadow-card relative overflow-hidden rounded-2xl border">
+      <div
+        className="graticule pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_80%_100%_at_0%_0%,black,transparent_75%)]"
+        aria-hidden
+      />
+      <div className={cn('pointer-events-none absolute -top-28 -left-20 size-72 rounded-full blur-3xl', glow)} aria-hidden />
+      <div className="relative flex flex-col gap-5 p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset', iconCls)}>
+            <Icon className="size-6" />
+          </div>
+          <div className="min-w-0">
+            {monitors ? (
+              <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">{title}</h1>
+            ) : (
               <Skeleton className="h-7 w-56" />
-              <Skeleton className="mt-2 h-4 w-72" />
-            </>
-          )}
+            )}
+            {monitors && total > 0 && (
+              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
+                {stat(t('cmd.monitors'), formatNumber(total))}
+                {stat(t('hero.avg'), stats.latency === null ? '—' : formatLatency(stats.latency))}
+                {stat(t('hero.uptime'), stats.uptime === null ? '—' : formatUptime(stats.uptime, 2))}
+              </div>
+            )}
+          </div>
         </div>
+        {isAdmin && (
+          <Button asChild className="self-start md:self-center">
+            <Link to="/monitors/new">
+              <Plus />
+              {t('nav.newMonitor')}
+            </Link>
+          </Button>
+        )}
       </div>
-      {isAdmin && (
-        <Button asChild className="shrink-0 max-sm:size-9 max-sm:px-0">
-          <Link to="/monitors/new" aria-label={t('dash.add')}>
-            <Plus />
-            <span className="max-sm:sr-only">{t('dash.add')}</span>
-          </Link>
-        </Button>
-      )}
-    </div>
+    </section>
   )
 }
 
@@ -156,7 +177,7 @@ function StatusTiles({
   const { t } = useI18n()
   const order: Eff[] = ['up', 'down', 'pending', 'paused']
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
       {order.map((s) => {
         const st = tileStyle[s]
         const active = filter === s
@@ -167,7 +188,7 @@ function StatusTiles({
             aria-pressed={active}
             onClick={() => onToggle(s)}
             className={cn(
-              'bg-card hover:border-foreground/25 focus-visible:ring-ring/50 flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left shadow-xs transition-colors outline-none focus-visible:ring-[3px]',
+              'bg-card shadow-card hover:border-border-strong focus-visible:ring-ring/50 flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
               active && cn('ring-2', st.active),
             )}
           >
@@ -176,11 +197,11 @@ function StatusTiles({
                 <span className={cn('size-1.5 shrink-0 rounded-full', statusDot[s])} />
                 {t(`status.${s}` as const)}
               </div>
-              <div className={cn('mt-0.5 text-2xl font-semibold tabular-nums', counts[s] > 0 && st.text)}>
+              <div className={cn('num mt-1 text-2xl font-semibold', counts[s] > 0 ? st.text : 'text-foreground/70')}>
                 {loaded ? counts[s] : <Skeleton className="h-8 w-10" />}
               </div>
             </div>
-            <st.icon className={cn('size-5 shrink-0 opacity-70', st.text)} />
+            <st.icon className={cn('size-5 shrink-0', active ? st.text : 'text-muted-foreground/50')} />
           </button>
         )
       })}
@@ -188,7 +209,7 @@ function StatusTiles({
   )
 }
 
-/* ---------------------------------------------------------------- card */
+/* ---------------------------------------------------------------- grid card */
 
 const MonitorCard = memo(function MonitorCard({
   m,
@@ -210,26 +231,24 @@ const MonitorCard = memo(function MonitorCard({
       onClick={() => onOpen(m.id)}
       aria-pressed={selected}
       className={cn(
-        'bg-card focus-visible:ring-ring/50 hover:border-foreground/25 relative flex min-w-0 flex-col gap-2.5 overflow-hidden rounded-xl border p-3.5 text-left shadow-xs transition-[border-color,box-shadow] outline-none hover:shadow-md focus-visible:ring-[3px]',
-        status === 'down' && 'bg-down/[0.05] border-down/35 hover:border-down/60',
-        paused && 'opacity-65',
-        selected && 'border-primary/60 ring-primary/40 ring-2',
+        'bg-card shadow-card focus-visible:ring-ring/50 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-4 text-left transition-[border-color,box-shadow,background-color] duration-150 outline-none focus-visible:ring-[3px]',
+        status === 'down' && 'border-down/40 bg-down/[0.045] hover:border-down/60',
+        paused && 'opacity-60 hover:opacity-90',
+        selected && 'ring-primary/50 border-primary/50 ring-2',
       )}
     >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn('size-2 shrink-0 rounded-full', statusDot[status], status === 'down' && 'animate-pulse')}
-        />
+      <div className="flex items-center gap-2.5">
+        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
         <StatusBadge status={status} className="shrink-0" />
       </div>
-      <div className="text-muted-foreground -mt-1 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
+      <div className="text-muted-foreground -mt-1.5 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
       <HeartbeatBar beats={m.beats} max={40} size="sm" stretch />
-      <div className="text-muted-foreground grid grid-cols-[1fr_1fr_1.5fr] gap-2 text-xs whitespace-nowrap tabular-nums">
-        <span className="text-foreground truncate font-medium" title={t('detail.latencyNow')}>
+      <div className="text-muted-foreground grid grid-cols-[1fr_1fr_1.5fr] gap-2 border-t pt-2.5 text-xs whitespace-nowrap">
+        <span className="num text-foreground truncate font-medium" title={t('detail.latencyNow')}>
           {paused ? '—' : formatLatency(m.latency_ms)}
         </span>
-        <span className="truncate" title={`${t('detail.uptime')} · ${t('range.24h')}`}>
+        <span className="num truncate" title={`${t('detail.uptime')} · ${t('range.24h')}`}>
           {formatUptime(m.uptime_24h, 1)}
         </span>
         <span className="truncate text-right" title={t('detail.lastCheck')}>
@@ -242,11 +261,11 @@ const MonitorCard = memo(function MonitorCard({
 
 function SkeletonCard() {
   return (
-    <div className="bg-card flex flex-col gap-2.5 rounded-xl border p-3.5">
+    <div className="bg-card flex flex-col gap-3 rounded-xl border p-4">
       <div className="flex items-center gap-2">
         <Skeleton className="size-2 rounded-full" />
         <Skeleton className="h-4 flex-1" />
-        <Skeleton className="h-5 w-16" />
+        <Skeleton className="h-5 w-16 rounded-full" />
       </div>
       <Skeleton className="h-3 w-2/3" />
       <Skeleton className="h-4 w-full" />
@@ -254,6 +273,84 @@ function SkeletonCard() {
     </div>
   )
 }
+
+/* ---------------------------------------------------------------- list view */
+
+// name | history | sparkline | latency | uptime | last check | chevron
+const rowGrid =
+  'grid grid-cols-[minmax(0,1fr)_5.5rem_1rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_5.5rem_5rem_1rem] xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_6rem_5.5rem_5rem_7rem_1rem] items-center gap-4'
+
+function ListHeader() {
+  const { t } = useI18n()
+  return (
+    <div
+      className={cn(
+        rowGrid,
+        'bg-card/95 text-muted-foreground sticky top-14 z-10 rounded-t-xl border-b px-4 py-2 text-xs font-medium backdrop-blur',
+      )}
+    >
+      <span>{t('col.monitor')}</span>
+      <span className="hidden md:block">{t('col.history')}</span>
+      <span className="hidden xl:block" />
+      <span className="text-right">{t('col.latency')}</span>
+      <span className="hidden text-right md:block">{t('col.uptime')}</span>
+      <span className="hidden text-right xl:block">{t('col.lastCheck')}</span>
+      <span />
+    </div>
+  )
+}
+
+const MonitorRow = memo(function MonitorRow({
+  m,
+  selected,
+  now,
+  onOpen,
+}: {
+  m: MonitorSummary
+  selected: boolean
+  now: number
+  onOpen: (id: number) => void
+}) {
+  const { t } = useI18n()
+  const status = effectiveStatus(m)
+  const paused = status === 'paused'
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(m.id)}
+      aria-pressed={selected}
+      className={cn(
+        rowGrid,
+        'hover:bg-accent/50 focus-visible:bg-accent/60 w-full border-b px-4 py-2.5 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
+        status === 'down' && 'bg-down/[0.045] hover:bg-down/[0.08]',
+        paused && 'text-muted-foreground',
+        selected && 'bg-primary/[0.07] hover:bg-primary/10',
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} title={t(`status.${status}` as const)} />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">{m.name}</div>
+          <div className="text-muted-foreground truncate text-xs">{monitorTarget(m) || '—'}</div>
+        </div>
+      </div>
+      <div className="hidden min-w-0 md:block">
+        <HeartbeatBar beats={m.beats} max={30} size="xs" stretch />
+      </div>
+      <div className="hidden xl:block">
+        <Sparkline beats={m.beats.slice(-30)} width={96} height={22} />
+      </div>
+      <span className="num truncate text-right text-sm">{paused ? '—' : formatLatency(m.latency_ms)}</span>
+      <span className="num text-muted-foreground hidden truncate text-right text-sm md:block">
+        {formatUptime(m.uptime_24h, 1)}
+      </span>
+      <span className="text-muted-foreground hidden truncate text-right text-xs xl:block">
+        {m.last_check ? formatRelative(m.last_check, now) : t('dash.noChecks')}
+      </span>
+      <ChevronRight className="text-muted-foreground/60 size-4" />
+    </button>
+  )
+})
 
 /* ---------------------------------------------------------------- groups */
 
@@ -301,7 +398,7 @@ function groupDot(monitors: MonitorSummary[]) {
   return 'bg-up'
 }
 
-const gridCls = 'grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3'
+const gridCls = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,17.5rem),1fr))] gap-3'
 
 /* ---------------------------------------------------------------- page */
 
@@ -316,13 +413,37 @@ export function DashboardPage() {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Eff | null>(null)
   const [sort, setSort] = useState<Sort>('status')
+  const [view, setViewState] = useState<View>(readView)
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
   const narrowing = q.trim() !== '' || filter !== null
+
+  const setView = (v: View) => {
+    setViewState(v)
+    try {
+      localStorage.setItem('observi-dashboard-view', v)
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   const counts = useMemo(() => {
     const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0 }
     for (const m of monitors ?? []) c[effectiveStatus(m)]++
     return c
+  }, [monitors])
+
+  // Group totals are over ALL monitors of the group, regardless of filters.
+  const groupTotals = useMemo(() => {
+    const map = new Map<string, { up: number; total: number; all: MonitorSummary[] }>()
+    for (const m of monitors ?? []) {
+      const key = m.group_id === null ? 'none' : String(m.group_id)
+      const g = map.get(key) ?? { up: 0, total: 0, all: [] }
+      g.total++
+      if (effectiveStatus(m) === 'up') g.up++
+      g.all.push(m)
+      map.set(key, g)
+    }
+    return map
   }, [monitors])
 
   const filtered = useMemo(() => {
@@ -347,20 +468,7 @@ export function DashboardPage() {
       })
   }, [monitors, q, filter, sort, lang])
 
-  // Per-group totals over ALL monitors, so headers don't change with search/filters.
-  const groupTotals = useMemo(() => {
-    const totals = new Map<string, { up: number; total: number }>()
-    for (const m of monitors ?? []) {
-      const key = m.group_id === null ? 'none' : String(m.group_id)
-      const e = totals.get(key) ?? { up: 0, total: 0 }
-      e.total += 1
-      if (effectiveStatus(m) === 'up') e.up += 1
-      totals.set(key, e)
-    }
-    return totals
-  }, [monitors])
-
-  // null = no groups at all → flat grid without headers.
+  // null = no groups at all → flat layout without headers.
   const grouped = useMemo<MonitorGroupView[] | null>(() => {
     if (!monitors?.some((m) => m.group_id !== null)) return null
     const map = new Map<number, MonitorGroupView>()
@@ -401,51 +509,85 @@ export function DashboardPage() {
     if (selectedId !== null && monitors && !selected) navigate('/dashboard', { replace: true })
   }, [selectedId, monitors, selected, navigate])
 
-  const renderCards = (list: MonitorSummary[]) => (
-    <div className={gridCls}>
-      {list.map((m) => (
-        <MonitorCard key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
-      ))}
-    </div>
+  const renderMonitors = (list: MonitorSummary[]) =>
+    view === 'grid' ? (
+      <div className={gridCls}>
+        {list.map((m) => (
+          <MonitorCard key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
+        ))}
+      </div>
+    ) : (
+      <div className="bg-card shadow-card rounded-xl border">
+        <ListHeader />
+        {list.map((m) => (
+          <MonitorRow key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
+        ))}
+      </div>
+    )
+
+  const viewBtn = (v: View, Icon: LucideIcon, label: string) => (
+    <button
+      type="button"
+      onClick={() => setView(v)}
+      aria-pressed={view === v}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'text-muted-foreground hover:text-foreground flex h-7 w-8 items-center justify-center rounded-md transition-colors',
+        view === v && 'bg-card text-foreground shadow-xs',
+      )}
+    >
+      <Icon className="size-4" />
+    </button>
   )
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 sm:gap-5">
       <Hero monitors={monitors} counts={counts} isAdmin={isAdmin} />
       <StatusTiles counts={counts} loaded={!!monitors} filter={filter} onToggle={toggleFilter} />
 
       {/* Toolbar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
+            id={DASHBOARD_SEARCH_ID}
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && (setQ(''), e.currentTarget.blur())}
             placeholder={t('dash.search')}
-            className="pr-8 pl-8"
+            className="pr-9 pl-9"
           />
-          {q && (
+          {q ? (
             <button
               onClick={() => setQ('')}
-              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
+              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2.5 -translate-y-1/2"
               aria-label={t('dash.clearSearch')}
             >
               <X className="size-4" />
             </button>
+          ) : (
+            <Kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 sm:inline-flex">/</Kbd>
           )}
         </div>
-        <label className="flex items-center gap-2 sm:ml-auto">
-          <span className="text-muted-foreground text-xs font-medium">{t('dash.sort')}</span>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as Sort)}
-            className="border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-          >
-            <option value="status">{t('dash.sortStatus')}</option>
-            <option value="name">{t('dash.sortName')}</option>
-            <option value="slowest">{t('dash.sortSlowest')}</option>
-          </select>
-        </label>
+        <div className="flex flex-1 items-center justify-end gap-2">
+          <label className="flex items-center gap-2">
+            <span className="text-muted-foreground text-xs">{t('dash.sort')}</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as Sort)}
+              className="border-input bg-card dark:bg-input/20 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-lg border px-2.5 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+            >
+              <option value="status">{t('dash.sortStatus')}</option>
+              <option value="name">{t('dash.sortName')}</option>
+              <option value="slowest">{t('dash.sortSlowest')}</option>
+            </select>
+          </label>
+          <div className="bg-muted flex rounded-lg border p-0.5" role="group" aria-label={t('view.label')}>
+            {viewBtn('grid', LayoutGrid, t('view.grid'))}
+            {viewBtn('list', List, t('view.list'))}
+          </div>
+        </div>
       </div>
 
       {/* Monitors */}
@@ -465,71 +607,68 @@ export function DashboardPage() {
         </Card>
       )}
       {monitors && filtered.length === 0 && (
-        <Card className="text-muted-foreground items-center gap-3 p-10 text-center text-sm">
+        <Card className="py-0">
           {monitors.length === 0 ? (
-            isAdmin ? (
-              <>
-                {t('dash.emptyAdmin')}
-                <Button asChild size="sm">
-                  <Link to="/monitors/new">
-                    <Plus />
-                    {t('nav.newMonitor')}
-                  </Link>
-                </Button>
-              </>
-            ) : (
-              t('dash.emptyUser')
-            )
+            <EmptyState
+              kind="monitors"
+              title={isAdmin ? t('dash.emptyAdmin') : t('dash.emptyUser')}
+              action={
+                isAdmin && (
+                  <Button asChild size="sm">
+                    <Link to="/monitors/new">
+                      <Plus />
+                      {t('nav.newMonitor')}
+                    </Link>
+                  </Button>
+                )
+              }
+            />
           ) : (
-            <>
-              {t('common.noResults')}
-              {narrowing && (
-                <Button size="sm" variant="outline" onClick={clearFilters}>
-                  {t('dash.clearFilters')}
-                </Button>
-              )}
-            </>
+            <EmptyState
+              kind="search"
+              title={t('common.noResults')}
+              action={
+                narrowing && (
+                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                    {t('dash.clearFilters')}
+                  </Button>
+                )
+              }
+            />
           )}
         </Card>
       )}
       {grouped
         ? grouped.map((g) => {
             const isCollapsed = !narrowing && collapsed.has(g.key)
-            const totals = groupTotals.get(g.key) ?? { up: 0, total: g.monitors.length }
+            const totals = groupTotals.get(g.key) ?? { up: 0, total: g.monitors.length, all: g.monitors }
             return (
-              <section key={g.key} className="-mb-1">
+              <section key={g.key}>
                 <button
                   type="button"
                   onClick={() => toggleCollapsed(g.key)}
                   aria-expanded={!isCollapsed}
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 mb-2 flex w-full items-center gap-2 rounded-md px-1 py-1 text-xs font-semibold outline-none focus-visible:ring-[3px]"
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 mb-2.5 flex w-full items-center gap-2.5 rounded-md py-1 text-xs outline-none focus-visible:ring-[3px]"
                 >
-                  <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
-                  <span className={cn('size-2 shrink-0 rounded-full', groupDot(g.monitors))} />
-                  <span className="text-foreground truncate text-sm">{g.name}</span>
-                  <span className="tabular-nums">{formatNumber(totals.total)}</span>
+                  <ChevronRight className={cn('size-3.5 shrink-0 transition-transform duration-150', !isCollapsed && 'rotate-90')} />
+                  <span className={cn('size-2 shrink-0 rounded-full', groupDot(totals.all))} />
+                  <span className="text-foreground truncate text-sm font-semibold">{g.name}</span>
+                  <span className="num">{formatNumber(totals.total)}</span>
                   <span className="bg-border h-px flex-1" />
-                  <span className="font-normal whitespace-nowrap tabular-nums">
-                    {t('dash.groupUp', { up: totals.up, total: totals.total })}
-                  </span>
+                  <span className="num whitespace-nowrap">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
                 </button>
-                {!isCollapsed && <div className="mb-4">{renderCards(g.monitors)}</div>}
+                {!isCollapsed && renderMonitors(g.monitors)}
               </section>
             )
           })
-        : filtered.length > 0 && renderCards(filtered)}
+        : filtered.length > 0 && renderMonitors(filtered)}
 
       {/* Detail drawer (route-driven) */}
       <Sheet open={selected !== undefined} onOpenChange={(o) => !o && closeDrawer()}>
-        <SheetContent
-          side="right"
-          className="bg-background w-full max-w-none gap-0 p-0 sm:max-w-xl 2xl:max-w-2xl"
-        >
-          <div className="flex h-12 shrink-0 items-center border-b px-4">
-            <SheetTitle className="text-sm font-semibold">{t('dash.drawerTitle')}</SheetTitle>
-            <SheetDescription className="sr-only">{t('dash.drawerDesc')}</SheetDescription>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+        <SheetContent side="right" className="bg-background w-full max-w-none gap-0 p-0 sm:max-w-xl 2xl:max-w-2xl">
+          <SheetTitle className="sr-only">{t('dash.drawerTitle')}</SheetTitle>
+          <SheetDescription className="sr-only">{t('dash.drawerDesc')}</SheetDescription>
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
             {drawerMonitor && <MonitorDetail key={drawerMonitor.id} monitor={drawerMonitor} />}
           </div>
         </SheetContent>

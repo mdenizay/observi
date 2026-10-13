@@ -1,0 +1,17 @@
+# Used by the release workflow: packages the prebuilt static binaries
+# (one per architecture) into a multi-arch image. No compilation here.
+FROM busybox:1.36 AS data
+RUN mkdir -p /data && chown 65532:65532 /data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETARCH
+COPY bin/${TARGETARCH}/observi /usr/local/bin/observi
+COPY --from=data --chown=65532:65532 /data /data
+ENV OBSERVI_DB=/data/observi.db \
+    OBSERVI_LISTEN=0.0.0.0:3001
+VOLUME ["/data"]
+EXPOSE 3001
+USER nonroot
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["/usr/local/bin/observi", "health"]
+ENTRYPOINT ["/usr/local/bin/observi"]
+CMD ["serve"]

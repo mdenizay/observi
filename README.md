@@ -14,7 +14,9 @@ It runs happily on a Raspberry Pi.
   before a monitor is declared down
 - **Multiple accounts and roles** — `superadmin` manages everything; regular users
   only see the monitors (or whole **groups** of monitors) you grant them
-- **Live dashboard** over Server-Sent Events, response-time charts, 24h / 7d / 30d uptime
+- **Live dashboard** over Server-Sent Events with grid and list views, response-time charts,
+  24h / 7d / 30d uptime, a 30-day uptime strip and incident history
+- **Command palette** (⌘K / Ctrl+K) to jump to any monitor or page, plus keyboard shortcuts
 - **Notifications** via Telegram, SMTP e-mail and webhooks (generic JSON, Discord, Slack)
 - **White-label**: set your own product name and logo in Settings
 - **English and Turkish** UI (language switcher in the app); notification language is configurable
@@ -25,7 +27,9 @@ It runs happily on a Raspberry Pi.
 
 ## Install
 
-Works on Linux servers (x86_64) and Raspberry Pi (64-bit OS: Pi 3/4/5, Zero 2 W)
+Use the install script (systemd) or [Docker](#docker).
+
+The script works on Linux servers (x86_64) and Raspberry Pi (64-bit OS: Pi 3/4/5, Zero 2 W)
 — anything with **systemd**:
 
 ```bash
@@ -49,6 +53,28 @@ Re-running the script **upgrades** an existing install and keeps your data.
 
 Where things live: binary `/usr/local/bin/observi`, data `/var/lib/observi`,
 configuration `/etc/observi/observi.env`.
+
+### Docker
+
+Multi-arch images (amd64, arm64 — Raspberry Pi included) are published to GitHub Container Registry:
+
+```bash
+docker run -d --name observi -p 3001:3001 -v observi-data:/data \
+  --restart unless-stopped ghcr.io/mdenizay/observi:latest
+docker logs observi 2>&1 | grep password     # generated superadmin password (first start only)
+```
+
+Or with Compose — see [`docker-compose.yml`](docker-compose.yml):
+
+```bash
+docker compose up -d
+```
+
+The image is a static binary on distroless (runs as a non-root user, a few MB). Data lives in the
+`/data` volume. Set `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` to choose the first superadmin
+instead of a generated one; they are only used when the database has no users. Manage users with
+`docker exec -it observi observi user-add <username> <name> superadmin`. Upgrade with
+`docker compose pull && docker compose up -d`. To build the image yourself: `docker build -t observi .`
 
 ### Exposing it
 
@@ -88,6 +114,7 @@ Environment variables (set them in `/etc/observi/observi.env`, then
 | `OBSERVI_LISTEN` | `127.0.0.1:3001` | Listen address |
 | `OBSERVI_RETENTION` | `90` | Heartbeat retention in days |
 | `OBSERVI_LANG` | `en` | Language of notifications: `en` or `tr` |
+| `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` | `admin` / generated | First superadmin, created only when the database has no users |
 | `RUST_LOG` | `info` | Log level |
 
 ## Command line
@@ -97,6 +124,7 @@ observi serve                                  start the server (default)
 observi user-add <username> <name> [superadmin|user]
 observi passwd <username>                      reset a password
 observi import-kuma <kuma.db>                  import monitors from Uptime Kuma
+observi health                                 exit 0 if the local server responds
 observi --version
 ```
 

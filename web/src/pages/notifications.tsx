@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Pencil, Plus, Send, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/empty-state'
+import { ListCard, ListRow, ListSearch, ListSkeleton, RowActions } from '@/components/list-kit'
+import { formatNumber } from '@/lib/format'
 import { Field, SwitchField } from '@/components/field'
 import { kindIcon, kindKinds, kindLabel } from '@/components/kind-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -19,7 +21,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
 import { api, errorMessage } from '@/lib/api'
 import type {
   Notification,
@@ -357,9 +358,10 @@ function summary(n: Notification, t: (key: Key, params?: Params) => string) {
 }
 
 export function NotificationsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const qc = useQueryClient()
   const list = useQuery({ queryKey: ['notifications'], queryFn: api.notifications })
+  const [q, setQ] = useState('')
   const [dialog, setDialog] = useState<{ open: boolean; item: Notification | null; key: number }>({
     open: false,
     item: null,
@@ -368,69 +370,78 @@ export function NotificationsPage() {
   const [toDelete, setToDelete] = useState<Notification | null>(null)
   const openDialog = (item: Notification | null) => setDialog((d) => ({ open: true, item, key: d.key + 1 }))
 
+  const shown = useMemo(() => {
+    const term = q.trim().toLocaleLowerCase(lang)
+    return (list.data ?? []).filter((n) => !term || n.name.toLocaleLowerCase(lang).includes(term))
+  }, [list.data, q, lang])
+
   return (
     <div>
       <PageHeader
         title={t('notif.title')}
+        count={list.data ? formatNumber(list.data.length) : undefined}
         description={t('notif.desc')}
         actions={
-          <Button size="sm" onClick={() => openDialog(null)}>
+          <Button onClick={() => openDialog(null)}>
             <Plus />
             {t('notif.new')}
           </Button>
         }
       />
+      <div className="mb-3">
+        <ListSearch value={q} onChange={setQ} />
+      </div>
 
       {list.isPending ? (
-        <div className="grid gap-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-        </div>
+        <ListSkeleton />
       ) : list.isError ? (
-        <Card className="text-muted-foreground p-8 text-center text-sm">{errorMessage(list.error)}</Card>
+        <ListCard>
+          <p className="text-muted-foreground p-8 text-center text-sm">{errorMessage(list.error)}</p>
+        </ListCard>
       ) : !list.data.length ? (
-        <Card className="text-muted-foreground flex flex-col items-center gap-3 p-10 text-center text-sm">
-          {t('notif.empty')}
-          <Button size="sm" variant="outline" onClick={() => openDialog(null)}>
-            <Plus />
-            {t('notif.add')}
-          </Button>
-        </Card>
+        <ListCard>
+          <EmptyState
+            kind="notifications"
+            title={t('notif.empty')}
+            description={t('notif.desc')}
+            action={
+              <Button size="sm" variant="outline" onClick={() => openDialog(null)}>
+                <Plus />
+                {t('notif.add')}
+              </Button>
+            }
+          />
+        </ListCard>
+      ) : shown.length === 0 ? (
+        <ListCard>
+          <EmptyState kind="search" title={t('common.noResults')} />
+        </ListCard>
       ) : (
-        <Card className="gap-0 py-0">
-          {list.data.map((n, i) => {
+        <ListCard>
+          {shown.map((n) => {
             const Icon = kindIcon[n.kind] ?? Send
+            const sum = summary(n, t)
             return (
-              <div key={n.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t' : ''}`}>
-                <div className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg">
-                  <Icon className="size-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium">{n.name}</span>
+              <ListRow
+                key={n.id}
+                onClick={() => openDialog(n)}
+                leading={
+                  <div className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
+                    <Icon className="size-4" />
+                  </div>
+                }
+                title={
+                  <>
+                    <span className="truncate">{n.name}</span>
                     {n.is_default && <Badge variant="secondary">{t('common.default')}</Badge>}
-                  </div>
-                  <div className="text-muted-foreground truncate text-xs">
-                    {kindLabel(n.kind)}
-                    {summary(n, t) && ` · ${summary(n, t)}`}
-                  </div>
-                </div>
-                <Button size="icon-sm" variant="ghost" onClick={() => openDialog(n)} aria-label={t('common.edit')}>
-                  <Pencil />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => setToDelete(n)}
-                  aria-label={t('common.delete')}
-                >
-                  <Trash2 />
-                </Button>
-              </div>
+                  </>
+                }
+                subtitle={sum ? `${kindLabel(n.kind)} — ${sum}` : kindLabel(n.kind)}
+                actions={<RowActions onEdit={() => openDialog(n)} onDelete={() => setToDelete(n)} />}
+              />
             )
           })}
-        </Card>
+        </ListCard>
       )}
 
       <NotificationDialog

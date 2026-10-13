@@ -95,3 +95,17 @@ export function monitorTarget(m: { type: string; url: string | null; hostname: s
   if (m.type === 'tcp') return m.hostname ? `${m.hostname}${m.port ? `:${m.port}` : ''}` : ''
   return m.url ?? ''
 }
+
+/** Compact duration such as "3h 5m" / "3 sa 5 dk". */
+export function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  const d = Math.floor(s / 86400)
+  const h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const u = (n: number, k: 'unit.d' | 'unit.h' | 'unit.m' | 'unit.s') => `${n}${translate(k)}`
+  if (d) return h ? `${u(d, 'unit.d')} ${u(h, 'unit.h')}` : u(d, 'unit.d')
+  if (h) return m ? `${u(h, 'unit.h')} ${u(m, 'unit.m')}` : u(h, 'unit.h')
+  if (m) return m < 10 && sec ? `${u(m, 'unit.m')} ${u(sec, 'unit.s')}` : u(m, 'unit.m')
+  return u(sec, 'unit.s')
+}

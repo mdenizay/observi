@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronsUpDown, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { toast } from 'sonner'
+import { Avatar } from '@/components/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
@@ -16,25 +17,6 @@ import { useUser } from '@/hooks/use-auth'
 import { useTheme, type ThemeMode } from '@/hooks/use-theme'
 import { LANGS, useI18n, type Lang } from '@/i18n'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/)
-  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
-}
-
-function Avatar({ name, className }: { name: string; className?: string }) {
-  return (
-    <div
-      className={cn(
-        'bg-accent text-accent-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-        className,
-      )}
-    >
-      {initials(name)}
-    </div>
-  )
-}
 
 /**
  * Bottom-of-sidebar account menu: user info, language, theme, settings and sign out.

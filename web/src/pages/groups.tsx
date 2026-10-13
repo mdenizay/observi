@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Folder, Info, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Folder, Info, Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/empty-state'
+import { ListCard, ListRow, ListSearch, ListSkeleton, RowActions } from '@/components/list-kit'
+import { statusDot } from '@/components/status-badge'
+import { formatNumber } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { Field } from '@/components/field'
 import { MonitorPicker } from '@/components/monitor-picker'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -119,9 +123,11 @@ function GroupDialog({
 }
 
 export function GroupsPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const qc = useQueryClient()
   const groups = useGroups()
+  const monitors = useMonitors()
+  const [q, setQ] = useState('')
   const [dialog, setDialog] = useState<{ open: boolean; group: Group | null; key: number }>({
     open: false,
     group: null,
@@ -130,60 +136,76 @@ export function GroupsPage() {
   const [toDelete, setToDelete] = useState<Group | null>(null)
   const openDialog = (group: Group | null) => setDialog((d) => ({ open: true, group, key: d.key + 1 }))
 
+  const list = useMemo(() => {
+    const term = q.trim().toLocaleLowerCase(lang)
+    return (groups.data ?? []).filter((g) => !term || g.name.toLocaleLowerCase(lang).includes(term))
+  }, [groups.data, q, lang])
+
+  const dotsFor = (g: Group) =>
+    (monitors.data ?? [])
+      .filter((m) => g.monitor_ids.includes(m.id))
+      .slice(0, 12)
+      .map((m) => <span key={m.id} className={cn('size-1.5 rounded-full', statusDot[m.active ? m.status : 'paused'])} />)
+
   return (
     <div>
       <PageHeader
         title={t('groups.title')}
+        count={groups.data ? formatNumber(groups.data.length) : undefined}
         description={t('groups.desc')}
         actions={
-          <Button size="sm" onClick={() => openDialog(null)}>
+          <Button onClick={() => openDialog(null)}>
             <Plus />
             {t('groups.new')}
           </Button>
         }
       />
+      <div className="mb-3">
+        <ListSearch value={q} onChange={setQ} />
+      </div>
 
       {groups.isPending ? (
-        <div className="grid gap-2">
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-        </div>
+        <ListSkeleton />
       ) : groups.isError ? (
-        <Card className="text-muted-foreground p-8 text-center text-sm">{errorMessage(groups.error)}</Card>
+        <ListCard>
+          <p className="text-muted-foreground p-8 text-center text-sm">{errorMessage(groups.error)}</p>
+        </ListCard>
       ) : !groups.data.length ? (
-        <Card className="text-muted-foreground flex flex-col items-center gap-3 p-10 text-center text-sm">
-          {t('groups.empty')}
-          <Button size="sm" variant="outline" onClick={() => openDialog(null)}>
-            <Plus />
-            {t('groups.add')}
-          </Button>
-        </Card>
+        <ListCard>
+          <EmptyState
+            kind="groups"
+            title={t('groups.empty')}
+            description={t('groups.desc')}
+            action={
+              <Button size="sm" variant="outline" onClick={() => openDialog(null)}>
+                <Plus />
+                {t('groups.add')}
+              </Button>
+            }
+          />
+        </ListCard>
+      ) : list.length === 0 ? (
+        <ListCard>
+          <EmptyState kind="search" title={t('common.noResults')} />
+        </ListCard>
       ) : (
-        <Card className="gap-0 py-0">
-          {groups.data.map((g, i) => (
-            <div key={g.id} className={`flex items-center gap-3 px-4 py-3 ${i ? 'border-t' : ''}`}>
-              <div className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg">
-                <Folder className="size-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{g.name}</div>
-                <div className="text-muted-foreground text-xs tabular-nums">{t('monitors.count', { count: g.monitor_ids.length })}</div>
-              </div>
-              <Button size="icon-sm" variant="ghost" onClick={() => openDialog(g)} aria-label={t('common.edit')}>
-                <Pencil />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                onClick={() => setToDelete(g)}
-                aria-label={t('common.delete')}
-              >
-                <Trash2 />
-              </Button>
-            </div>
+        <ListCard>
+          {list.map((g) => (
+            <ListRow
+              key={g.id}
+              onClick={() => openDialog(g)}
+              leading={
+                <div className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
+                  <Folder className="size-4" />
+                </div>
+              }
+              title={<span className="truncate">{g.name}</span>}
+              subtitle={t('monitors.count', { count: g.monitor_ids.length })}
+              meta={<div className="flex max-w-40 flex-wrap justify-end gap-1">{dotsFor(g)}</div>}
+              actions={<RowActions onEdit={() => openDialog(g)} onDelete={() => setToDelete(g)} />}
+            />
           ))}
-        </Card>
+        </ListCard>
       )}
 
       <GroupDialog

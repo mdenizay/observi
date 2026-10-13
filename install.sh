@@ -34,7 +34,8 @@ Options:
   --lang <en|tr>            Language of notifications (default: en on a fresh install)
   --admin-user <name>       Username of the first superadmin (default: admin)
   --admin-password <pass>   Password of the first superadmin (default: generated, min. 8 chars)
-  --no-admin                Do not create a first superadmin
+  --no-admin                Do not create it now (the server then creates 'admin' on
+                            first start and writes the password to the journal)
   --uninstall               Remove the service and binary (keeps your data)
   --purge                   With --uninstall: also delete data, config and the service user
   -h, --help                Show this help

@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Folder, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Folder, Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
+import { Avatar } from '@/components/avatar'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/empty-state'
+import { ListCard, ListRow, ListSearch, ListSkeleton, RowActions } from '@/components/list-kit'
+import { formatNumber } from '@/lib/format'
 import { Field } from '@/components/field'
 import { MonitorPicker } from '@/components/monitor-picker'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -22,7 +25,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useUser } from '@/hooks/use-auth'
 import { useGroups } from '@/hooks/use-groups'
 import { useMonitors } from '@/hooks/use-monitors'
@@ -236,10 +238,12 @@ function UserDialog({
 }
 
 export function UsersPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const me = useUser()
   const qc = useQueryClient()
   const users = useQuery({ queryKey: ['users'], queryFn: api.users })
+  const groups = useGroups()
+  const [q, setQ] = useState('')
   const [dialog, setDialog] = useState<{ open: boolean; user: ManagedUser | null; key: number }>({
     open: false,
     user: null,
@@ -248,85 +252,92 @@ export function UsersPage() {
   const [toDelete, setToDelete] = useState<ManagedUser | null>(null)
 
   const openDialog = (user: ManagedUser | null) => setDialog((d) => ({ open: true, user, key: d.key + 1 }))
+  const groupName = (id: number) => groups.data?.find((g) => g.id === id)?.name
+
+  const list = useMemo(() => {
+    const term = q.trim().toLocaleLowerCase(lang)
+    return (users.data ?? []).filter(
+      (u) =>
+        !term || u.name.toLocaleLowerCase(lang).includes(term) || u.username.toLocaleLowerCase(lang).includes(term),
+    )
+  }, [users.data, q, lang])
 
   return (
     <div>
       <PageHeader
         title={t('users.title')}
+        count={users.data ? formatNumber(users.data.length) : undefined}
         description={t('users.desc')}
         actions={
-          <Button size="sm" onClick={() => openDialog(null)}>
+          <Button onClick={() => openDialog(null)}>
             <Plus />
             {t('users.new')}
           </Button>
         }
       />
-      <Card className="py-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>{t('users.colName')}</TableHead>
-              <TableHead>{t('users.colUsername')}</TableHead>
-              <TableHead>{t('users.colRole')}</TableHead>
-              <TableHead>{t('users.colGroups')}</TableHead>
-              <TableHead>{t('users.colMonitors')}</TableHead>
-              <TableHead className="w-0" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.isPending &&
-              Array.from({ length: 3 }, (_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={6}>
-                    <Skeleton className="h-6 w-full" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            {users.isError && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
-                  {errorMessage(users.error)}
-                </TableCell>
-              </TableRow>
-            )}
-            {users.data?.map((u) => (
-              <TableRow key={u.id}>
-                <TableCell className="font-medium">
-                  {u.name}
-                  {u.id === me.id && <span className="text-muted-foreground ml-1.5 text-xs">{t('users.you')}</span>}
-                </TableCell>
-                <TableCell className="text-muted-foreground">{u.username}</TableCell>
-                <TableCell>
-                  <Badge variant={u.role === 'superadmin' ? 'default' : 'secondary'}>{u.role === 'superadmin' ? t('role.superadmin') : t('role.user')}</Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground tabular-nums">
-                  {u.role === 'superadmin' ? t('users.everything') : (u.group_ids?.length ?? 0)}
-                </TableCell>
-                <TableCell className="text-muted-foreground tabular-nums">
-                  {u.role === 'superadmin' ? t('users.everything') : u.monitor_ids.length}
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    <Button size="icon-sm" variant="ghost" onClick={() => openDialog(u)} aria-label={t('common.edit')}>
-                      <Pencil />
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={u.id === me.id}
-                      onClick={() => setToDelete(u)}
-                      aria-label={t('common.delete')}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <div className="mb-3">
+        <ListSearch value={q} onChange={setQ} />
+      </div>
+      {users.isPending ? (
+        <ListSkeleton />
+      ) : users.isError ? (
+        <ListCard>
+          <p className="text-muted-foreground p-8 text-center text-sm">{errorMessage(users.error)}</p>
+        </ListCard>
+      ) : list.length === 0 ? (
+        <ListCard>
+          <EmptyState kind={q ? 'search' : 'users'} title={t('common.noResults')} />
+        </ListCard>
+      ) : (
+        <ListCard>
+          {list.map((u) => (
+            <ListRow
+              key={u.id}
+              onClick={() => openDialog(u)}
+              leading={<Avatar name={u.name || u.username} />}
+              title={
+                <>
+                  <span className="truncate">{u.name}</span>
+                  {u.id === me.id && <span className="text-muted-foreground text-xs font-normal">{t('users.you')}</span>}
+                </>
+              }
+              subtitle={`@${u.username}`}
+              meta={
+                u.role === 'superadmin' ? (
+                  <span className="text-muted-foreground text-xs">{t('users.allAccess')}</span>
+                ) : (
+                  <>
+                    {u.group_ids?.slice(0, 2).map((g) => (
+                      <Badge key={g} variant="outline" className="text-muted-foreground max-w-32 font-normal">
+                        <Folder />
+                        <span className="truncate">{groupName(g) ?? `#${g}`}</span>
+                      </Badge>
+                    ))}
+                    {(u.group_ids?.length ?? 0) > 2 && (
+                      <span className="text-muted-foreground text-xs">+{(u.group_ids?.length ?? 0) - 2}</span>
+                    )}
+                    <span className="text-muted-foreground num text-xs">
+                      {t('monitors.count', { count: u.monitor_ids.length })}
+                    </span>
+                  </>
+                )
+              }
+              actions={
+                <>
+                  <Badge variant={u.role === 'superadmin' ? 'default' : 'secondary'} className="hidden sm:inline-flex">
+                    {u.role === 'superadmin' ? t('role.superadmin') : t('role.user')}
+                  </Badge>
+                  <RowActions
+                    onEdit={() => openDialog(u)}
+                    onDelete={() => setToDelete(u)}
+                    deleteDisabled={u.id === me.id}
+                  />
+                </>
+              }
+            />
+          ))}
+        </ListCard>
+      )}
 
       <UserDialog
         key={dialog.key}

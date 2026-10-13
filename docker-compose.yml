@@ -1,0 +1,20 @@
+# docker compose up -d
+# The first start creates a superadmin; with no OBSERVI_ADMIN_PASSWORD set the
+# generated password is printed once:  docker compose logs observi | grep password
+services:
+  observi:
+    image: ghcr.io/mdenizay/observi:latest
+    container_name: observi
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - observi-data:/data
+    environment:
+      OBSERVI_LANG: en            # language of notifications: en or tr
+      # OBSERVI_ADMIN_USER: admin
+      # OBSERVI_ADMIN_PASSWORD: change-me-please
+      # OBSERVI_RETENTION: 90     # heartbeat retention in days
+
+volumes:
+  observi-data:
