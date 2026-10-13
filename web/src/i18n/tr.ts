@@ -319,6 +319,8 @@ export const tr: Dict = {
   "dash.heroSub_other": "{count} monitör · ort. yanıt süresi {latency} · çalışma süresi {uptime} (24 saat)",
   "dash.heroEmpty": "Henüz izlenen bir şey yok.",
   "dash.sort": "Sırala",
+  "dash.hideSummary": "Özeti gizle",
+  "dash.showSummary": "Özeti göster",
   "dash.sortStatus": "Durum",
   "dash.sortName": "Ad",
   "dash.sortSlowest": "En yavaş önce",

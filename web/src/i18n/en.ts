@@ -318,6 +318,8 @@ export const en = {
   "dash.heroSub_other": "{count} monitors · avg. response {latency} · {uptime} uptime (24h)",
   "dash.heroEmpty": "Nothing is being monitored yet.",
   "dash.sort": "Sort",
+  "dash.hideSummary": "Hide summary",
+  "dash.showSummary": "Show summary",
   "dash.sortStatus": "Status",
   "dash.sortName": "Name",
   "dash.sortSlowest": "Slowest first",

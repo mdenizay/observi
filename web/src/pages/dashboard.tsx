@@ -8,6 +8,8 @@ import {
   CircleAlert,
   Clock,
   Hourglass,
+  Eye,
+  EyeOff,
   LayoutGrid,
   List,
   PauseCircle,
@@ -65,14 +67,26 @@ function readView(): View {
 
 /* ---------------------------------------------------------------- hero + tiles */
 
+const HERO_KEY = 'observi-hide-summary'
+
+function readHeroHidden() {
+  try {
+    return localStorage.getItem(HERO_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 function Hero({
   monitors,
   counts,
   isAdmin,
+  onHide,
 }: {
   monitors: MonitorSummary[] | undefined
   counts: Record<Eff, number>
   isAdmin: boolean
+  onHide: () => void
 }) {
   const { t } = useI18n()
 
@@ -130,7 +144,16 @@ function Hero({
         aria-hidden
       />
       <div className={cn('pointer-events-none absolute -top-28 -left-20 size-72 rounded-full blur-3xl', glow)} aria-hidden />
-      <div className="relative flex flex-col gap-5 p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
+      <button
+        type="button"
+        onClick={onHide}
+        aria-label={t('dash.hideSummary')}
+        title={t('dash.hideSummary')}
+        className="text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring/50 absolute top-2.5 right-2.5 z-10 flex size-7 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-[3px]"
+      >
+        <EyeOff className="size-4" />
+      </button>
+      <div className="relative flex flex-col gap-5 p-5 pr-12 sm:p-6 sm:pr-14 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset', iconCls)}>
             <Icon className="size-6" />
@@ -414,6 +437,16 @@ export function DashboardPage() {
   const [filter, setFilter] = useState<Eff | null>(null)
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
+  const [heroHidden, setHeroHiddenState] = useState(readHeroHidden)
+  const setHeroHidden = (hidden: boolean) => {
+    setHeroHiddenState(hidden)
+    try {
+      if (hidden) localStorage.setItem(HERO_KEY, '1')
+      else localStorage.removeItem(HERO_KEY)
+    } catch {
+      /* storage unavailable */
+    }
+  }
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
   const narrowing = q.trim() !== '' || filter !== null
 
@@ -543,7 +576,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
-      <Hero monitors={monitors} counts={counts} isAdmin={isAdmin} />
+      {!heroHidden && <Hero monitors={monitors} counts={counts} isAdmin={isAdmin} onHide={() => setHeroHidden(true)} />}
       <StatusTiles counts={counts} loaded={!!monitors} filter={filter} onToggle={toggleFilter} />
 
       {/* Toolbar */}
@@ -587,6 +620,28 @@ export function DashboardPage() {
             {viewBtn('grid', LayoutGrid, t('view.grid'))}
             {viewBtn('list', List, t('view.list'))}
           </div>
+          {heroHidden && (
+            <>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-9"
+                onClick={() => setHeroHidden(false)}
+                aria-label={t('dash.showSummary')}
+                title={t('dash.showSummary')}
+              >
+                <Eye />
+              </Button>
+              {isAdmin && (
+                <Button asChild className="max-sm:size-9 max-sm:px-0">
+                  <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
+                    <Plus />
+                    <span className="max-sm:sr-only">{t('nav.newMonitor')}</span>
+                  </Link>
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
