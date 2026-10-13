@@ -105,4 +105,12 @@ type WebhookCfg = { url: string; format: "json"|"discord"|"slack" }
 type Notification = NotificationInput & { id: number }
 ```
 
-
+## Branding (white-label)
+The product name and logo are configurable. The server also injects them into `index.html`
+(`<title>`, favicon and `window.__OBSERVI_BRAND__`) so there is no flash of the default brand.
+- `GET /api/branding` (public) → `{name, logo}`; `logo` is a URL (with a `?v=` cache buster) or `null`
+- `PUT /api/branding` (superadmin) `{name}` (1–40 chars) → `{name, logo}`
+- `GET /api/branding/logo` (public) → the image
+- `PUT /api/branding/logo` (superadmin) raw image body with its `Content-Type`
+  (png, jpeg, webp, gif or svg+xml; max 512 KB) → `{name, logo}`
+- `DELETE /api/branding/logo` (superadmin) → `{name, logo}`

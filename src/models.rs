@@ -390,6 +390,18 @@ pub fn set_user_monitors(c: &Connection, user_id: i64, ids: &[i64]) -> Result<()
     Ok(())
 }
 
+pub fn get_setting(c: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(c.query_row("SELECT value FROM settings WHERE key = ?", [key], |r| r.get(0)).optional()?)
+}
+
+pub fn set_setting(c: &Connection, key: &str, value: &str) -> Result<()> {
+    c.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [key, value],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

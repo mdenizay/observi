@@ -2,9 +2,9 @@ import { Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
-import { AppShell } from '@/components/app-shell'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { FullPageSpinner, RequireAuth, RequireSuperadmin } from '@/components/guards'
+import { useBrandHead } from '@/hooks/use-brand'
 import { useTheme } from '@/hooks/use-theme'
 import { setUnauthorizedHandler } from '@/lib/api'
 import { lazyWithReload } from '@/lib/lazy'
@@ -12,6 +12,7 @@ import { LoginPage } from '@/pages/login'
 import { NotFoundPage } from '@/pages/not-found'
 
 // Route-level code splitting keeps login light.
+const AppShell = lazyWithReload(() => import('@/components/app-shell').then((m) => ({ default: m.AppShell })))
 const DashboardPage = lazyWithReload(() => import('@/pages/dashboard').then((m) => ({ default: m.DashboardPage })))
 const MonitorFormPage = lazyWithReload(() => import('@/pages/monitor-form').then((m) => ({ default: m.MonitorFormPage })))
 const NotificationsPage = lazyWithReload(() => import('@/pages/notifications').then((m) => ({ default: m.NotificationsPage })))
@@ -37,7 +38,8 @@ function UnauthorizedBridge() {
 }
 
 export function App() {
-  const { theme } = useTheme()
+  const { resolved } = useTheme()
+  useBrandHead()
   const location = useLocation()
   return (
     <>
@@ -65,7 +67,7 @@ export function App() {
       </Routes>
       </Suspense>
       </ErrorBoundary>
-      <Toaster theme={theme} position="top-right" richColors closeButton />
+      <Toaster theme={resolved} position="top-right" richColors closeButton />
     </>
   )
 }

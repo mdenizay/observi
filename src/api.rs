@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::convert::Infallible;
 use std::time::Duration;
 
-use axum::extract::{Path, Query, State};
+use axum::body::Bytes;
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -13,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::auth::{self, Admin, AuthUser, COOKIE, SESSION_TTL_MS};
+use crate::brand;
 use crate::db::now_ms;
 use crate::models::{self, Monitor, MonitorConfig, Role, User};
 use crate::notify::{self, NotificationInput};
@@ -84,6 +86,11 @@ pub fn router() -> Router<AppState> {
         .route("/monitors/{id}/heartbeats", get(monitor_heartbeats))
         .route("/monitors/{id}/events", get(monitor_events))
         .route("/events", get(events))
+        .route("/branding", get(get_branding).put(put_branding))
+        .route(
+            "/branding/logo",
+            get(get_logo).put(put_logo).delete(delete_logo).layer(DefaultBodyLimit::max(2 * brand::MAX_LOGO_BYTES)),
+        )
         .route("/groups", get(list_groups).post(create_group))
         .route("/groups/{id}", put(update_group).delete(delete_group))
         .route("/users", get(list_users).post(create_user))
@@ -619,6 +626,63 @@ async fn events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(20))))
 }
 
+// ---------- branding ----------
+
+async fn current_brand(st: &AppState) -> ApiResult<Json<Value>> {
+    let b = st.db.call(|c| brand::get(c)).await?;
+    Ok(Json(json!(b)))
+}
+
+async fn get_branding(State(st): State<AppState>) -> ApiResult<Response> {
+    let body = current_brand(&st).await?;
+    Ok(([(header::CACHE_CONTROL, "no-cache")], body).into_response())
+}
+
+#[derive(Deserialize)]
+struct BrandReq {
+    name: String,
+}
+
+async fn put_branding(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<BrandReq>) -> ApiResult<Json<Value>> {
+    st.db.call(move |c| Ok(brand::set_name(c, &req.name))).await??;
+    current_brand(&st).await
+}
+
+async fn get_logo(State(st): State<AppState>) -> ApiResult<Response> {
+    let (mime, data) = st.db.call(|c| brand::logo(c)).await?.ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable".to_string()),
+            // An uploaded SVG must never run script if it is opened directly.
+            (header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'; sandbox".to_string()),
+        ],
+        data,
+    )
+        .into_response())
+}
+
+async fn put_logo(
+    State(st): State<AppState>,
+    Admin(_): Admin,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    if body.len() > brand::MAX_LOGO_BYTES {
+        return Err(bad("logo_too_large", "Logo must be 512 KB or smaller"));
+    }
+    let ct = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let mime = brand::sniff(ct, &body)
+        .ok_or_else(|| bad("logo_type_unsupported", "Logo must be a PNG, JPEG, WebP, GIF or SVG image"))?;
+    st.db.call(move |c| brand::set_logo(c, mime, &body)).await?;
+    current_brand(&st).await
+}
+
+async fn delete_logo(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    st.db.call(|c| brand::clear_logo(c)).await?;
+    current_brand(&st).await
+}
+
 // ---------- groups ----------
 
 #[derive(Deserialize)]
@@ -894,7 +958,8 @@ async fn test_notification(
     Admin(_): Admin,
     Json(n): Json<NotificationInput>,
 ) -> ApiResult<Json<Value>> {
-    notify::send(&st, &n.channel, &notify::test_alert())
+    let app = st.db.call(|c| brand::get(c)).await?.name;
+    notify::send(&st, &n.channel, &notify::test_alert(&app))
         .await
         .map_err(|e| bad("notification_failed", format!("{e:#}")))?;
     Ok(Json(json!({})))

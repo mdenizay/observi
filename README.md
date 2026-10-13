@@ -16,6 +16,7 @@ It runs happily on a Raspberry Pi.
   only see the monitors (or whole **groups** of monitors) you grant them
 - **Live dashboard** over Server-Sent Events, response-time charts, 24h / 7d / 30d uptime
 - **Notifications** via Telegram, SMTP e-mail and webhooks (generic JSON, Discord, Slack)
+- **White-label**: set your own product name and logo in Settings
 - **English and Turkish** UI (language switcher in the app); notification language is configurable
 - **Frugal by design** — SQLite in WAL mode, batched heartbeat writes (gentle on SD cards),
   one task per monitor, no polling in the browser

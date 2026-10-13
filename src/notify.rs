@@ -301,9 +301,9 @@ pub async fn send(state: &AppState, ch: &Channel, alert: &Alert) -> Result<()> {
     Ok(())
 }
 
-pub fn test_alert() -> Alert {
+pub fn test_alert(app: &str) -> Alert {
     Alert {
-        title: crate::i18n::pick("🔔 Observi test notification", "🔔 Observi test bildirimi").into(),
+        title: format!("🔔 {app} {}", crate::i18n::pick("test notification", "test bildirimi")),
         body: crate::i18n::pick("This channel is configured correctly.", "Bu kanal doğru yapılandırıldı.").into(),
         up: true,
         monitor: None,

@@ -73,6 +73,16 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     PRIMARY KEY (monitor_id, t)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS heartbeats_important ON heartbeats (monitor_id, t) WHERE important = 1;
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS branding_logo (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL

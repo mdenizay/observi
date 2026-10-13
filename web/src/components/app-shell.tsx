@@ -1,27 +1,22 @@
 import { Suspense, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { NavLink, Outlet } from 'react-router'
 import {
   Bell,
   Folder,
   House,
   Loader2,
-  LogOut,
   Menu,
   Plus,
   Settings,
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { toast } from 'sonner'
-import { LanguageSwitcher } from '@/components/language-switcher'
 import { Logo } from '@/components/logo'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { UserMenu } from '@/components/user-menu'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { useUser } from '@/hooks/use-auth'
 import { useLiveUpdates } from '@/hooks/use-live-updates'
-import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useI18n, type Key } from '@/i18n'
 
@@ -45,26 +40,12 @@ const nav: NavItem[] = [
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useI18n()
   const user = useUser()
-  const qc = useQueryClient()
-  const navigate = useNavigate()
   const isAdmin = user.role === 'superadmin'
-
-  const logout = async () => {
-    try {
-      await api.logout()
-    } catch {
-      /* session might already be gone */
-    }
-    qc.clear()
-    qc.setQueryData(['me'], null)
-    toast.success(t('nav.signedOut'))
-    navigate('/login', { replace: true })
-  }
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center px-4">
-        <Logo />
+        <Logo onNavigate={onNavigate} />
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
         {nav
@@ -87,32 +68,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </NavLink>
           ))}
       </nav>
-      <div className="border-t p-3">
-        <div className="flex items-center gap-2.5">
-          <div className="bg-accent text-accent-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase">
-            {initials(user.name || user.username)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{user.name || user.username}</div>
-            <div className="text-muted-foreground truncate text-xs">
-              {isAdmin ? t('role.superadmin') : t('role.user')}
-            </div>
-          </div>
-          <LanguageSwitcher side="up" />
-          <ThemeToggle />
-        </div>
-        <Button variant="ghost" size="sm" className="text-muted-foreground mt-2 w-full justify-start" onClick={logout}>
-          <LogOut />
-          {t('nav.signOut')}
-        </Button>
+      <div className="border-t p-2">
+        <UserMenu onNavigate={onNavigate} />
       </div>
     </div>
   )
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/)
-  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
 
 export function AppShell() {
@@ -132,8 +92,7 @@ export function AppShell() {
         </Button>
         <Logo />
         <div className="flex-1" />
-        <LanguageSwitcher />
-        <ThemeToggle />
+        <UserMenu compact />
       </header>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" className="p-0">

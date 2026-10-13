@@ -1,4 +1,5 @@
 import { translate, translateDynamic } from '@/i18n'
+import type { Brand } from './brand'
 import type {
   Beat,
   Group,
@@ -42,8 +43,13 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
     res = await fetch(`/api${path}`, {
       method,
       credentials: 'same-origin',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers:
+        body instanceof Blob
+          ? { 'Content-Type': body.type || 'application/octet-stream' }
+          : body !== undefined
+            ? { 'Content-Type': 'application/json' }
+            : undefined,
+      body: body instanceof Blob ? body : body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
     throw new ApiError(0, 'Cannot reach the server', 'network')
@@ -121,6 +127,11 @@ export const api = {
     u: { name?: string; role?: Role; password?: string; monitor_ids?: number[]; group_ids?: number[] },
   ) => put(`/users/${id}`, u),
   deleteUser: (id: number) => del(`/users/${id}`),
+
+  branding: () => get<Brand>('/branding', { silent401: true }),
+  updateBrandName: (name: string) => put<Brand>('/branding', { name }),
+  uploadLogo: (file: Blob) => put<Brand>('/branding/logo', file),
+  deleteLogo: () => del<Brand>('/branding/logo'),
 
   groups: () => get<Group[]>('/groups'),
   createGroup: (g: { name: string; monitor_ids?: number[] }) => post<{ id: number }>('/groups', g),

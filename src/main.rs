@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod brand;
 mod check;
 mod db;
 mod i18n;

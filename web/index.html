@@ -9,7 +9,8 @@
     <script>
       try {
         var t = localStorage.getItem('observi-theme');
-        if (t === 'light') document.documentElement.classList.remove('dark');
+        var light = t === 'light' || (t === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (light) document.documentElement.classList.remove('dark');
       } catch (e) {}
     </script>
   </head>

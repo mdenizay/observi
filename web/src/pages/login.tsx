@@ -3,18 +3,20 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/language-switcher'
-import { LogoMark } from '@/components/logo'
+import { BrandMark } from '@/components/logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useMe } from '@/hooks/use-auth'
+import { useBrand } from '@/hooks/use-brand'
 import { api, ApiError, errorMessage } from '@/lib/api'
 import { useI18n } from '@/i18n'
 
 export function LoginPage() {
   const { t } = useI18n()
+  const { name } = useBrand()
   const { data: me } = useMe()
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -52,9 +54,9 @@ export function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <LogoMark className="size-10" />
+          <BrandMark className="size-10" />
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Observi</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{name}</h1>
             <p className="text-muted-foreground text-sm">{t('login.subtitle')}</p>
           </div>
         </div>
