@@ -103,7 +103,7 @@ function Hero({
   }[tone]
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3.5">
         <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-2xl', toneCls)}>
           <Icon className="size-6" />
@@ -131,10 +131,10 @@ function Hero({
         </div>
       </div>
       {isAdmin && (
-        <Button asChild>
-          <Link to="/monitors/new">
+        <Button asChild className="shrink-0 max-sm:size-9 max-sm:px-0">
+          <Link to="/monitors/new" aria-label={t('dash.add')}>
             <Plus />
-            {t('dash.add')}
+            <span className="max-sm:sr-only">{t('dash.add')}</span>
           </Link>
         </Button>
       )}
@@ -211,7 +211,7 @@ const MonitorCard = memo(function MonitorCard({
       aria-pressed={selected}
       className={cn(
         'bg-card focus-visible:ring-ring/50 hover:border-foreground/25 relative flex min-w-0 flex-col gap-2.5 overflow-hidden rounded-xl border p-3.5 text-left shadow-xs transition-[border-color,box-shadow] outline-none hover:shadow-md focus-visible:ring-[3px]',
-        status === 'down' && 'bg-down/[0.04] before:bg-down before:absolute before:inset-y-0 before:left-0 before:w-[3px]',
+        status === 'down' && 'bg-down/[0.05] border-down/35 hover:border-down/60',
         paused && 'opacity-65',
         selected && 'border-primary/60 ring-primary/40 ring-2',
       )}
@@ -346,6 +346,19 @@ export function DashboardPage() {
         return statusOrder[effectiveStatus(a)] - statusOrder[effectiveStatus(b)] || byName(a, b)
       })
   }, [monitors, q, filter, sort, lang])
+
+  // Per-group totals over ALL monitors, so headers don't change with search/filters.
+  const groupTotals = useMemo(() => {
+    const totals = new Map<string, { up: number; total: number }>()
+    for (const m of monitors ?? []) {
+      const key = m.group_id === null ? 'none' : String(m.group_id)
+      const e = totals.get(key) ?? { up: 0, total: 0 }
+      e.total += 1
+      if (effectiveStatus(m) === 'up') e.up += 1
+      totals.set(key, e)
+    }
+    return totals
+  }, [monitors])
 
   // null = no groups at all → flat grid without headers.
   const grouped = useMemo<MonitorGroupView[] | null>(() => {
@@ -482,7 +495,7 @@ export function DashboardPage() {
       {grouped
         ? grouped.map((g) => {
             const isCollapsed = !narrowing && collapsed.has(g.key)
-            const up = g.monitors.filter((m) => effectiveStatus(m) === 'up').length
+            const totals = groupTotals.get(g.key) ?? { up: 0, total: g.monitors.length }
             return (
               <section key={g.key} className="-mb-1">
                 <button
@@ -494,10 +507,10 @@ export function DashboardPage() {
                   <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', !isCollapsed && 'rotate-90')} />
                   <span className={cn('size-2 shrink-0 rounded-full', groupDot(g.monitors))} />
                   <span className="text-foreground truncate text-sm">{g.name}</span>
-                  <span className="tabular-nums">{formatNumber(g.monitors.length)}</span>
+                  <span className="tabular-nums">{formatNumber(totals.total)}</span>
                   <span className="bg-border h-px flex-1" />
                   <span className="font-normal whitespace-nowrap tabular-nums">
-                    {t('dash.groupUp', { up, total: g.monitors.length })}
+                    {t('dash.groupUp', { up: totals.up, total: totals.total })}
                   </span>
                 </button>
                 {!isCollapsed && <div className="mb-4">{renderCards(g.monitors)}</div>}

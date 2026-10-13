@@ -286,7 +286,11 @@ export function SettingsPage() {
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <PasswordCard />
         <LanguageCard />
-        {isAdmin && <BrandingCard />}
+        {isAdmin && (
+          <div className="lg:col-span-2">
+            <BrandingCard />
+          </div>
+        )}
       </div>
     </div>
   )
