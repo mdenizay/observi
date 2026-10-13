@@ -62,9 +62,20 @@ function watchForNewVersion(target: string | null) {
     try {
       const info = await api.updateInfo()
       pushInfo?.(info)
+      // The server may have restarted on the new version between the two requests.
+      if (info.current && info.current !== BUILD_VERSION) {
+        toast.success(translate('upd.updated', { v: info.current }))
+        setTimeout(() => location.reload(), 800)
+        return
+      }
       if (info.state === 'error') {
         setState({ phase: 'idle', target: null })
         toast.error(translate('upd.error', { error: info.error ?? '—' }))
+        return
+      }
+      // The updater gave up without restarting the server (still on the old version).
+      if (info.state === 'idle' && Date.now() - started > POLL_MS * 2) {
+        setState({ phase: 'timeout', target })
         return
       }
     } catch {

@@ -36,6 +36,8 @@ export function setUnauthorizedHandler(fn: UnauthorizedHandler | null) {
 interface RequestOpts {
   /** Do not trigger global 401 redirect (login, me). */
   silent401?: boolean
+  /** Treat a 2xx body with `{error}` as a failure (POST /notifications/test). */
+  errorInBody?: boolean
 }
 
 async function request<T>(method: string, path: string, body?: unknown, opts: RequestOpts = {}): Promise<T> {
@@ -73,7 +75,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
     throw new ApiError(res.status, `Request failed (${res.status})`, statusCode(res.status) ?? 'request_failed')
   }
   // POST /notifications/test may return 200 with {error, code}
-  const bodyErr = extractError(data)
+  const bodyErr = opts.errorInBody ? extractError(data) : null
   if (bodyErr) throw new ApiError(res.status, bodyErr.message, bodyErr.code)
   return data as T
 }
@@ -149,7 +151,7 @@ export const api = {
   createNotification: (n: NotificationInput) => post<Notification>('/notifications', n),
   updateNotification: (id: number, n: NotificationInput) => put<Notification>(`/notifications/${id}`, n),
   deleteNotification: (id: number) => del(`/notifications/${id}`),
-  testNotification: (n: NotificationInput) => post('/notifications/test', n),
+  testNotification: (n: NotificationInput) => post('/notifications/test', n, { errorInBody: true }),
 }
 
 /**
