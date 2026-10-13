@@ -1,4 +1,3 @@
-import { Check, CircleDot, HelpCircle, Pause, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { statusLabel, uptimeTone, formatUptime } from '@/lib/format'
 import type { MonitorStatus } from '@/lib/types'
@@ -12,8 +11,6 @@ const variant: Record<MonitorStatus, 'up' | 'down' | 'pending' | 'paused' | 'mut
   unknown: 'muted',
 }
 
-const icon = { up: Check, down: X, pending: CircleDot, paused: Pause, unknown: HelpCircle } as const
-
 export const statusDot: Record<MonitorStatus, string> = {
   up: 'bg-up',
   down: 'bg-down',
@@ -22,11 +19,11 @@ export const statusDot: Record<MonitorStatus, string> = {
   unknown: 'bg-muted-foreground/40',
 }
 
+/** Soft tinted pill with a status dot. */
 export function StatusBadge({ status, className }: { status: MonitorStatus; className?: string }) {
-  const Icon = icon[status]
   return (
-    <Badge variant={variant[status]} className={className}>
-      <Icon className="size-3" strokeWidth={2.5} />
+    <Badge variant={variant[status]} className={cn('gap-1.5 pl-2', className)}>
+      <span className={cn('size-1.5 rounded-full bg-current')} />
       {statusLabel(status)}
     </Badge>
   )

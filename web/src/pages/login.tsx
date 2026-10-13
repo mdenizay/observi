@@ -50,7 +50,7 @@ export function LoginPage() {
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       <div
         aria-hidden
-        className="dot-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,black,transparent_85%)]"
+        className="pointer-events-none absolute top-1/2 left-1/2 size-[40rem] -translate-x-1/2 -translate-y-[60%] rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--foreground)_7%,transparent),transparent)]"
       />
       <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
         <LanguageSwitcher />
@@ -64,7 +64,7 @@ export function LoginPage() {
             <p className="text-muted-foreground text-sm">{t('login.subtitle')}</p>
           </div>
         </div>
-        <Panel className="shadow-raised" bodyClassName="p-6">
+        <Panel className="shadow-raised" bodyClassName="p-6 sm:p-7">
             <form onSubmit={submit} className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="username">{t('common.username')}</Label>

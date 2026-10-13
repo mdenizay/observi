@@ -22,7 +22,17 @@ import { api } from '@/lib/api'
  * Bottom-of-sidebar account menu: user info, language, theme, settings and sign out.
  * `compact` renders only the avatar (mobile top bar) and opens downward.
  */
-export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
+export function UserMenu({
+  compact = false,
+  onNavigate,
+  side,
+  align,
+}: {
+  compact?: boolean
+  onNavigate?: () => void
+  side?: 'top' | 'bottom' | 'right'
+  align?: 'start' | 'end'
+}) {
   const { t, lang, setLang } = useI18n()
   const { mode, setMode } = useTheme()
   const user = useUser()
@@ -59,7 +69,7 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
           <button
             type="button"
             aria-label={t('usermenu.open')}
-            className="bg-card shadow-card hover:border-border-strong data-[state=open]:border-border-strong focus-visible:ring-ring/40 flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
+            className="hover:bg-sidebar-active/70 data-[state=open]:bg-sidebar-active focus-visible:ring-ring/40 flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
           >
             <Avatar name={display} />
             <div className="min-w-0 flex-1">
@@ -71,8 +81,8 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side={compact ? 'bottom' : 'top'}
-        align={compact ? 'end' : 'start'}
+        side={side ?? (compact ? 'bottom' : 'top')}
+        align={align ?? (compact ? 'end' : 'start')}
         className="w-64 max-w-[calc(100vw-1.5rem)]"
       >
         <div className="flex items-center gap-2.5 px-2 py-2">

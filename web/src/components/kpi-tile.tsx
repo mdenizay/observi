@@ -1,77 +1,76 @@
+import { CircleArrowDown, CircleArrowUp } from 'lucide-react'
+import { InfoTip } from '@/components/panel'
 import { cn } from '@/lib/utils'
 
-/** A row of thin vertical ticks; the highlighted one is drawn in ink (or a state colour). */
-export function TickSparkline({
-  values,
-  highlight = values.length - 1,
-  highlightClass = 'bg-foreground',
-  className,
-}: {
-  values: number[]
-  highlight?: number
-  highlightClass?: string
-  className?: string
-}) {
-  const max = Math.max(1, ...values)
+export interface Delta {
+  /** Direction of the change. */
+  dir: 'up' | 'down'
+  /** Whether this change is good (green) or bad (red). */
+  good: boolean
+  text: string
+}
+
+export function DeltaPill({ delta }: { delta: Delta }) {
+  const Icon = delta.dir === 'up' ? CircleArrowUp : CircleArrowDown
   return (
-    <div className={cn('flex h-8 items-end gap-[3px]', className)} aria-hidden>
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={cn('w-[2px] rounded-full', i === highlight ? highlightClass : 'bg-muted-foreground/30')}
-          style={{ height: `${Math.max(12, (v / max) * 100)}%` }}
-        />
-      ))}
-    </div>
+    <span
+      className={cn(
+        'num inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs font-medium',
+        delta.good ? 'bg-up/12 text-up' : 'bg-down/12 text-down',
+      )}
+    >
+      <Icon className="size-3.5" />
+      {delta.text}
+    </span>
   )
 }
 
+/** KPI card: label (+ info) top-left, optional delta pill top-right, big number, muted sub-line. */
 export function KpiTile({
   label,
+  info,
   value,
-  footer,
-  spark,
+  sub,
+  delta,
   as = 'div',
   active,
   onClick,
   className,
-  ...rest
 }: {
   label: React.ReactNode
+  info?: string
   value: React.ReactNode
-  footer?: React.ReactNode
-  spark?: React.ReactNode
+  sub?: React.ReactNode
+  delta?: Delta
   as?: 'div' | 'button'
   active?: boolean
   onClick?: () => void
   className?: string
-} & Omit<React.HTMLAttributes<HTMLElement>, 'onClick'>) {
+}) {
   const Comp = as
   return (
     <Comp
       {...(as === 'button' ? { type: 'button' as const, 'aria-pressed': active } : {})}
       onClick={onClick}
       className={cn(
-        'bg-card text-card-foreground shadow-card flex min-w-0 flex-col overflow-hidden rounded-xl border text-left',
+        'bg-card text-card-foreground shadow-card flex min-w-0 flex-col rounded-2xl border p-4 text-left sm:p-5',
         as === 'button' &&
-          'hover:border-border-strong focus-visible:ring-ring/40 transition-[border-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
-        active && 'border-foreground/70 ring-foreground/70 ring-1',
+          'hover:bg-accent/40 focus-visible:ring-ring/40 transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
+        active && 'ring-foreground/40 bg-accent/40 ring-2',
         className,
       )}
-      {...rest}
     >
-      <div className="flex items-start justify-between gap-3 px-3.5 pt-3 pb-2.5">
-        <div className="min-w-0">
-          <div className="label-mono flex items-center gap-1.5 truncate">{label}</div>
-          <div className="num mt-1.5 text-2xl leading-none font-medium tracking-tight whitespace-nowrap sm:text-[1.75rem]">{value}</div>
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-[13px]">
+          <span className="truncate">{label}</span>
+          {info && <InfoTip text={info} />}
         </div>
-        {spark}
+        {delta && <DeltaPill delta={delta} />}
       </div>
-      {footer !== undefined && (
-        <div className="bg-frame/70 text-muted-foreground num mt-auto truncate border-t px-3.5 py-1.5 text-[11px]">
-          {footer}
-        </div>
-      )}
+      <div className="num mt-2 text-[1.625rem] leading-tight font-semibold tracking-tight whitespace-nowrap sm:text-3xl">
+        {value}
+      </div>
+      {sub !== undefined && <div className="text-muted-foreground mt-1 truncate text-xs">{sub}</div>}
     </Comp>
   )
 }

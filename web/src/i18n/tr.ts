@@ -405,4 +405,9 @@ export const tr: Dict = {
   "col.status": "Durum",
   "sort.by": "{col} sütununa göre sırala",
   "dash.monitorsTitle": "Monitörler",
+  "nav.docs": "Dokümantasyon",
+  "sidebar.collapse": "Kenar çubuğunu daralt",
+  "sidebar.expand": "Kenar çubuğunu genişlet",
+  "detail.vsAvg": "24 saatlik ortalama {avg} ile karşılaştırıldığında",
+  "card.uptime": "{value} çalışma",
 }

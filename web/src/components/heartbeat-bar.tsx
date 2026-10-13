@@ -7,29 +7,29 @@ import type { Beat } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 /**
- * Pixel heartbeat history: one small square per check, oldest on the left.
- * Healthy checks are neutral ink; only anomalies get colour so problems pop out.
+ * Heartbeat history as a row of thin rounded bars, oldest on the left.
+ * Healthy checks are neutral grey so failures (red) and pending (amber) stand out.
  */
-const cellColor: Record<number, string> = {
+const barColor: Record<number, string> = {
   0: 'bg-down',
-  1: 'bg-cell-ok',
+  1: 'bg-bar-ok',
   2: 'bg-pending',
   3: 'bg-paused/40',
 }
 
 const sizes = {
-  xs: { c: 6, gap: 2 },
-  sm: { c: 8, gap: 2 },
-  md: { c: 9, gap: 2 },
-  lg: { c: 10, gap: 3 },
+  xs: { w: 3, h: 16, gap: 2 },
+  sm: { w: 4, h: 22, gap: 3 },
+  md: { w: 5, h: 26, gap: 3 },
+  lg: { w: 6, h: 32, gap: 3 },
 } as const
 
 interface Props {
   beats: Beat[]
-  /** Maximum number of cells (fewer if the width doesn't fit). */
+  /** Maximum number of bars (fewer if the width doesn't fit). */
   max?: number
   size?: keyof typeof sizes
-  /** Spread the cells over the full width. */
+  /** Spread the bars over the full width. */
   stretch?: boolean
   className?: string
 }
@@ -45,7 +45,7 @@ export const HeartbeatBar = memo(function HeartbeatBar({ beats, max = 30, size =
   const { t } = useI18n() // also re-renders this memoized bar when the language changes
   const [ref, width] = useWidth<HTMLDivElement>()
   const s = sizes[size]
-  const fit = width > 0 ? Math.max(1, Math.floor((width + s.gap) / (s.c + s.gap))) : max
+  const fit = width > 0 ? Math.max(1, Math.floor((width + s.gap) / (s.w + s.gap))) : max
   const count = Math.min(max, fit)
   const shown = beats.slice(-count)
   const empty = count - shown.length
@@ -54,19 +54,19 @@ export const HeartbeatBar = memo(function HeartbeatBar({ beats, max = 30, size =
     <div
       ref={ref}
       className={cn('flex w-full items-center overflow-hidden', stretch ? 'justify-between' : 'justify-end', className)}
-      style={{ gap: stretch ? undefined : s.gap, height: s.c }}
+      style={{ gap: stretch ? undefined : s.gap, height: s.h }}
       role="img"
       aria-label={t('heartbeat.recent')}
     >
       {Array.from({ length: empty }, (_, i) => (
-        <span key={`e${i}`} className="bg-cell-empty shrink-0 rounded-[2px]" style={{ width: s.c, height: s.c }} />
+        <span key={`e${i}`} className="bg-bar-empty shrink-0 rounded-full" style={{ width: s.w, height: s.h }} />
       ))}
       {shown.map((b) => (
         <span
           key={b.t}
           title={beatTitle(b)}
-          className={cn('shrink-0 rounded-[2px] transition-transform duration-150 hover:scale-125', cellColor[b.s] ?? 'bg-cell-empty')}
-          style={{ width: s.c, height: s.c }}
+          className={cn('shrink-0 rounded-full transition-opacity duration-150 hover:opacity-70', barColor[b.s] ?? 'bg-bar-empty')}
+          style={{ width: s.w, height: s.h }}
         />
       ))}
     </div>

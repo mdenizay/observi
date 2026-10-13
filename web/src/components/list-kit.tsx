@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/panel'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
 
@@ -41,11 +42,11 @@ export function ListCard({
   className?: string
 }) {
   return (
-    <Panel title={title} className={className} bodyClassName="overflow-hidden">
+    <Panel title={title} className={className} bodyClassName={cn('overflow-hidden rounded-b-2xl', !title && 'rounded-t-2xl')}>
       {head && (
-        <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
-          <span className="label-mono text-[10px]">{head[0]}</span>
-          {head[1] && <span className="label-mono hidden pr-10 text-[10px] sm:inline">{head[1]}</span>}
+        <div className="flex items-center justify-between gap-3 border-b px-5 py-2.5">
+          <span className="text-muted-foreground text-xs">{head[0]}</span>
+          {head[1] && <span className="text-muted-foreground hidden pr-10 text-xs sm:inline">{head[1]}</span>}
         </div>
       )}
       <div className="divide-y">{children}</div>
@@ -69,7 +70,7 @@ export function ListRow({
   onClick?: () => void
 }) {
   return (
-    <div className="hover:bg-foreground/[0.025] group flex items-center gap-3 px-4 py-3.5 transition-colors duration-150">
+    <div className="hover:bg-accent/40 group flex items-center gap-3 px-5 py-3.5 transition-colors duration-150">
       {leading}
       <button
         type="button"

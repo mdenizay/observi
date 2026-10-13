@@ -277,7 +277,7 @@ export function MonitorFormPage() {
       />
 
       {!loaded ? (
-        <Panel className="lg:max-w-[50%]" bodyClassName="grid gap-4 p-4">
+        <Panel className="lg:max-w-[50%]" bodyClassName="grid gap-4 p-5">
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-2/3" />
@@ -285,7 +285,7 @@ export function MonitorFormPage() {
       ) : (
         <form onSubmit={submit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2" noValidate>
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
-            <Panel title={t('mf.general')} info={t('mf.generalDesc')} bodyClassName="p-4 grid gap-4 sm:grid-cols-2">
+            <Panel title={t('mf.general')} description={t('mf.generalDesc')} bodyClassName="px-5 pb-5 grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-1.5 sm:col-span-2">
                   <span className="text-sm leading-none font-medium" id="type-label">
                     {t('mf.type')}
@@ -434,15 +434,17 @@ export function MonitorFormPage() {
               </Panel>
 
             {isHttp && (
-              <Panel bare>
+              <section className="bg-card shadow-card rounded-2xl border">
                 <Collapsible open={advanced} onOpenChange={setAdvanced}>
-                  <CollapsibleTrigger className="label-mono hover:text-foreground flex min-h-9 w-full items-center gap-1.5 px-2.5 py-1 text-left">
-                    <ChevronRight className={cn('size-3.5 transition-transform', advanced && 'rotate-90')} />
-                    <span>{t('mf.advanced')}</span>
-                    <span className="truncate tracking-normal normal-case opacity-80">— {t('mf.advancedDesc')}</span>
+                  <CollapsibleTrigger className="hover:bg-accent/30 flex w-full items-start gap-2 rounded-2xl px-5 py-4 text-left transition-colors">
+                    <ChevronRight className={cn('mt-0.5 size-4 shrink-0 transition-transform duration-150', advanced && 'rotate-90')} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">{t('mf.advanced')}</span>
+                      <span className="text-muted-foreground mt-1 block text-[13px]">{t('mf.advancedDesc')}</span>
+                    </span>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="bg-card shadow-card grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
+                    <div className="grid gap-4 px-5 pb-5 sm:grid-cols-2">
                       <Field label={t('mf.headers')} htmlFor="headers" error={errors.headers}>
                         <Textarea
                           id="headers"
@@ -467,11 +469,11 @@ export function MonitorFormPage() {
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
-              </Panel>
+              </section>
             )}
           </div>
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
-            <Panel title={t('mf.checkSettings')} info={t('mf.checkSettingsDesc')} bodyClassName="p-4 grid gap-4 sm:grid-cols-2">
+            <Panel title={t('mf.checkSettings')} description={t('mf.checkSettingsDesc')} bodyClassName="px-5 pb-5 grid gap-4 sm:grid-cols-2">
                 <Field label={t('mf.interval')} htmlFor="interval" error={errors.interval} hint={t('mf.intervalHint')}>
                   <Input
                     id="interval"
@@ -571,7 +573,7 @@ export function MonitorFormPage() {
                 </div>
               </Panel>
 
-            <Panel title={t('mf.notifications')} info={t('mf.notificationsDesc')} bodyClassName="p-4">
+            <Panel title={t('mf.notifications')} description={t('mf.notificationsDesc')} bodyClassName="px-5 pb-5">
                 {notifications.isPending ? (
                   <Skeleton className="h-9 w-full" />
                 ) : !notifications.data?.length ? (

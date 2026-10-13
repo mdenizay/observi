@@ -49,7 +49,7 @@ function PasswordCard() {
   }
 
   return (
-    <Panel title={t('settings.pw.title')} info={t('settings.pw.desc')} bodyClassName="p-4 grid gap-4">
+    <Panel title={t('settings.pw.title')} description={t('settings.pw.desc')} bodyClassName="px-5 pb-5 grid gap-4">
       <form onSubmit={submit} noValidate className="contents">
           <Field label={t('settings.pw.current')} htmlFor="pw-current" error={errors.current}>
             <Input
@@ -83,7 +83,6 @@ function PasswordCard() {
               />
             </Field>
           </div>
-        <div className="divider-dots" />
         <div className="flex justify-end">
           <Button type="submit" disabled={saving}>
             {saving && <Loader2 className="animate-spin" />}
@@ -161,7 +160,7 @@ function BrandingCard() {
   }
 
   return (
-    <Panel title={t('brand.title')} info={t('brand.desc')} bodyClassName="p-4 grid gap-5">
+    <Panel title={t('brand.title')} description={t('brand.desc')} bodyClassName="px-5 pb-5 grid gap-5">
         <form onSubmit={saveName} noValidate className="flex items-start gap-2">
           <Field label={t('brand.name')} htmlFor="brand-name" error={nameError} className="flex-1">
             <Input
@@ -238,7 +237,7 @@ function BrandingCard() {
 function LanguageCard() {
   const { t, lang, setLang } = useI18n()
   return (
-    <Panel title={t('lang.label')} info={t('lang.desc')} bodyClassName="p-4">
+    <Panel title={t('lang.label')} description={t('lang.desc')} bodyClassName="px-5 pb-5">
         <div className="bg-muted inline-flex rounded-md p-0.5" role="radiogroup" aria-label={t('lang.label')}>
           {LANGS.map((l) => (
             <button

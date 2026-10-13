@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { ArrowDown, ArrowUpDown, ChevronRight, LayoutGrid, List, Plus, Search, X, type LucideIcon } from 'lucide-react'
 import { EmptyState } from '@/components/empty-state'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
-import { KpiTile, TickSparkline } from '@/components/kpi-tile'
+import { KpiTile } from '@/components/kpi-tile'
+import { PageHeader } from '@/components/app-shell'
 import { Panel } from '@/components/panel'
 import { MonitorDetail } from '@/components/monitor-detail'
 import { Sparkline } from '@/components/sparkline'
@@ -35,14 +36,7 @@ function effectiveStatus(m: MonitorSummary): Eff {
 
 const statusOrder: Record<Eff, number> = { down: 0, pending: 1, up: 2, paused: 3 }
 
-const tileTone: Record<Eff, { tick: string; value: string }> = {
-  up: { tick: 'bg-up', value: '' },
-  down: { tick: 'bg-down', value: 'text-down' },
-  pending: { tick: 'bg-pending', value: 'text-pending' },
-  paused: { tick: 'bg-foreground', value: '' },
-}
-
-const beatEff: Record<number, Eff> = { 0: 'down', 1: 'up', 2: 'pending', 3: 'paused' }
+const tileTone: Record<Eff, string> = { up: '', down: 'text-down', pending: 'text-pending', paused: '' }
 
 function readView(): View {
   try {
@@ -53,8 +47,6 @@ function readView(): View {
 }
 
 /* ---------------------------------------------------------------- KPI tiles */
-
-const TICKS = 10
 
 function StatusTiles({
   monitors,
@@ -69,23 +61,6 @@ function StatusTiles({
 }) {
   const { t } = useI18n()
   const order: Eff[] = ['up', 'down', 'pending', 'paused']
-
-  // For each of the last TICKS checks: how many monitors were in each state.
-  const ticks = useMemo(() => {
-    const out: Record<Eff, number[]> = { up: [], down: [], pending: [], paused: [] }
-    for (let k = 0; k < TICKS; k++) {
-      const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0 }
-      for (const m of monitors ?? []) {
-        const b = m.beats[m.beats.length - TICKS + k]
-        if (!m.active) c.paused++
-        else if (b) c[beatEff[b.s] ?? 'pending']++
-      }
-      for (const s of order) out[s].push(c[s])
-    }
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monitors])
-
   const avgUp = useMemo(() => {
     const l = (monitors ?? [])
       .filter((m) => effectiveStatus(m) === 'up' && m.latency_ms !== null)
@@ -95,43 +70,34 @@ function StatusTiles({
   const total = monitors?.length ?? 0
 
   return (
-    <Panel title={t('col.status')} info={t('dash.tileInfo')} bare>
-      <div className="grid grid-cols-2 gap-1 md:grid-cols-4">
-        {order.map((s) => (
-          <KpiTile
-            key={s}
-            as="button"
-            active={filter === s}
-            onClick={() => onToggle(s)}
-            label={
-              <>
-                <span className={cn('size-1.5 shrink-0 rounded-full', statusDot[s])} />
-                {t(`status.${s}` as const)}
-              </>
-            }
-            value={
-              monitors ? (
-                <span className={cn(counts[s] > 0 && tileTone[s].value)}>{counts[s]}</span>
-              ) : (
-                <Skeleton className="h-7 w-10" />
-              )
-            }
-            spark={
-              <TickSparkline
-                values={ticks[s]}
-                highlightClass={counts[s] > 0 ? tileTone[s].tick : 'bg-foreground'}
-                className="hidden min-[420px]:flex"
-              />
-            }
-            footer={
-              s === 'up' && avgUp !== null
-                ? t('dash.avgShort', { latency: formatLatency(avgUp) })
-                : t('dash.ofTotal', { total: formatNumber(total) })
-            }
-          />
-        ))}
-      </div>
-    </Panel>
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+      {order.map((s) => (
+        <KpiTile
+          key={s}
+          as="button"
+          active={filter === s}
+          onClick={() => onToggle(s)}
+          label={
+            <span className="flex items-center gap-2">
+              <span className={cn('size-2 shrink-0 rounded-full', statusDot[s])} />
+              {t(`status.${s}` as const)}
+            </span>
+          }
+          value={
+            monitors ? (
+              <span className={cn(counts[s] > 0 && tileTone[s])}>{counts[s]}</span>
+            ) : (
+              <Skeleton className="h-8 w-10" />
+            )
+          }
+          sub={
+            s === 'up' && avgUp !== null
+              ? t('dash.avgShort', { latency: formatLatency(avgUp) })
+              : t('dash.ofTotal', { total: formatNumber(total) })
+          }
+        />
+      ))}
+    </div>
   )
 }
 
@@ -151,36 +117,30 @@ const MonitorCard = memo(function MonitorCard({
   const { t } = useI18n()
   const status = effectiveStatus(m)
   const paused = status === 'paused'
-  const stat = (label: string, value: string, align?: 'right') => (
-    <div className={cn('min-w-0', align === 'right' && 'text-right')}>
-      <div className="label-mono text-[10px]">{label}</div>
-      <div className="num mt-0.5 truncate text-[13px]">{value}</div>
-    </div>
-  )
   return (
     <button
       type="button"
       onClick={() => onOpen(m.id)}
       aria-pressed={selected}
       className={cn(
-        'bg-card shadow-card focus-visible:ring-ring/40 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-3.5 text-left transition-[border-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
-        status === 'down' && 'border-down/45 bg-down/[0.035] hover:border-down/70',
+        'bg-card shadow-card focus-visible:ring-ring/40 hover:bg-accent/30 flex min-w-0 flex-col gap-3.5 rounded-2xl border p-4 text-left transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px] sm:p-5',
+        status === 'down' && 'bg-down/[0.06] ring-down/30 hover:bg-down/[0.09] ring-1',
         paused && 'opacity-60 hover:opacity-90',
-        selected && 'border-foreground/70 ring-foreground/70 ring-1',
+        selected && 'ring-foreground/40 ring-2',
       )}
     >
-      <div className="flex items-center gap-2.5">
-        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-medium">{m.name}</div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">{monitorTarget(m) || '—'}</div>
+        </div>
         <StatusBadge status={status} className="shrink-0" />
       </div>
-      <div className="text-muted-foreground -mt-2 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
       <HeartbeatBar beats={m.beats} max={40} size="sm" stretch />
-      <div className="divider-dots" />
-      <div className="grid grid-cols-[1fr_1fr_1.4fr] gap-2 whitespace-nowrap">
-        {stat(t('stat.resp'), paused ? '—' : formatLatency(m.latency_ms))}
-        {stat(t('range.24h.short'), formatUptime(m.uptime_24h, 1))}
-        {stat(t('stat.checked'), m.last_check ? formatRelative(m.last_check, now) : t('dash.noChecks'), 'right')}
+      <div className="text-muted-foreground flex items-center gap-4 text-xs whitespace-nowrap">
+        <span className="num text-foreground font-medium">{paused ? '—' : formatLatency(m.latency_ms)}</span>
+        <span className="num">{t('card.uptime', { value: formatUptime(m.uptime_24h, 1) })}</span>
+        <span className="ml-auto truncate">{m.last_check ? formatRelative(m.last_check, now) : t('dash.noChecks')}</span>
       </div>
     </button>
   )
@@ -188,7 +148,7 @@ const MonitorCard = memo(function MonitorCard({
 
 function SkeletonCard() {
   return (
-    <div className="bg-card flex flex-col gap-3 rounded-xl border p-3.5">
+    <div className="bg-card flex flex-col gap-3.5 rounded-2xl border p-5">
       <div className="flex items-center gap-2">
         <Skeleton className="size-2 rounded-full" />
         <Skeleton className="h-4 flex-1" />
@@ -196,11 +156,11 @@ function SkeletonCard() {
       </div>
       <Skeleton className="h-3 w-2/3" />
       <div className="flex justify-between">
-        {Array.from({ length: 24 }, (_, i) => (
-          <span key={i} className="bg-cell-empty size-2 animate-pulse rounded-[2px]" />
+        {Array.from({ length: 28 }, (_, i) => (
+          <span key={i} className="bg-bar-empty h-[22px] w-1 animate-pulse rounded-full" />
         ))}
       </div>
-      <Skeleton className="h-6 w-full" />
+      <Skeleton className="h-4 w-full" />
     </div>
   )
 }
@@ -225,14 +185,15 @@ function SortHead({
   className?: string
 }) {
   const { t } = useI18n()
-  if (!onClick) return <span className={cn('label-mono truncate text-[10px]', align === 'right' && 'text-right', className)}>{label}</span>
+  if (!onClick)
+    return <span className={cn('text-muted-foreground truncate text-xs', align === 'right' && 'text-right', className)}>{label}</span>
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={t('sort.by', { col: label })}
       className={cn(
-        'label-mono hover:text-foreground flex items-center gap-1 text-[10px] outline-none',
+        'text-muted-foreground hover:text-foreground focus-visible:text-foreground flex items-center gap-1 text-xs outline-none',
         align === 'right' && 'justify-end',
         active && 'text-foreground',
         className,
@@ -247,7 +208,7 @@ function SortHead({
 function ListHeader({ sort, onSort }: { sort: Sort; onSort: (s: Sort) => void }) {
   const { t } = useI18n()
   return (
-    <div className={cn(rowGrid, 'bg-card/95 sticky top-14 z-10 rounded-t-xl border-b px-4 py-2.5 backdrop-blur')}>
+    <div className={cn(rowGrid, 'bg-card/95 sticky top-14 z-10 border-b px-5 py-3 backdrop-blur lg:top-0')}>
       <SortHead label={t('col.monitor')} active={sort === 'name'} onClick={() => onSort('name')} />
       <SortHead label={t('col.status')} active={sort === 'status'} onClick={() => onSort('status')} className="hidden md:flex" />
       <SortHead label={t('col.history')} active={false} className="hidden md:block" />
@@ -281,10 +242,10 @@ const MonitorRow = memo(function MonitorRow({
       aria-pressed={selected}
       className={cn(
         rowGrid,
-        'hover:bg-foreground/[0.025] focus-visible:bg-foreground/[0.04] w-full border-b px-4 py-3 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
-        status === 'down' && 'bg-down/[0.04] hover:bg-down/[0.07]',
+        'hover:bg-accent/40 focus-visible:bg-accent/50 w-full border-b px-5 py-3.5 text-left transition-colors duration-150 outline-none last:rounded-b-2xl last:border-b-0',
+        status === 'down' && 'bg-down/[0.05] hover:bg-down/[0.08]',
         paused && 'text-muted-foreground',
-        selected && 'bg-foreground/[0.05]',
+        selected && 'bg-accent/60',
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
@@ -496,8 +457,8 @@ export function DashboardPage() {
       aria-label={label}
       title={label}
       className={cn(
-        'text-muted-foreground hover:text-foreground flex h-7 w-8 items-center justify-center rounded-md transition-colors',
-        view === v && 'bg-card text-foreground shadow-xs',
+        'text-muted-foreground hover:text-foreground flex h-7 w-9 items-center justify-center rounded-full transition-colors',
+        view === v && 'bg-card text-foreground shadow-xs dark:bg-accent',
       )}
     >
       <Icon className="size-4" />
@@ -505,7 +466,20 @@ export function DashboardPage() {
   )
 
   return (
-    <div className="flex flex-col gap-4 sm:gap-5">
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <PageHeader
+        title={t('nav.dashboard')}
+        actions={
+          isAdmin && (
+            <Button asChild>
+              <Link to="/monitors/new">
+                <Plus />
+                {t('nav.newMonitor')}
+              </Link>
+            </Button>
+          )
+        }
+      />
       <StatusTiles monitors={monitors} counts={counts} filter={filter} onToggle={toggleFilter} />
 
       {/* Toolbar */}
@@ -538,25 +512,17 @@ export function DashboardPage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as Sort)}
-              className="border-input bg-card dark:bg-input/20 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-lg border px-2.5 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+              className="border-input bg-card dark:bg-input/20 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-xl border px-3 text-sm outline-none focus-visible:ring-[3px]"
             >
               <option value="status">{t('dash.sortStatus')}</option>
               <option value="name">{t('dash.sortName')}</option>
               <option value="slowest">{t('dash.sortSlowest')}</option>
             </select>
           </label>
-          <div className="bg-muted flex rounded-lg border p-0.5" role="group" aria-label={t('view.label')}>
+          <div className="bg-muted flex rounded-full p-1" role="group" aria-label={t('view.label')}>
             {viewBtn('grid', LayoutGrid, t('view.grid'))}
             {viewBtn('list', List, t('view.list'))}
           </div>
-          {isAdmin && (
-            <Button asChild className="max-sm:size-9 max-sm:px-0">
-              <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
-                <Plus />
-                <span className="max-sm:sr-only">{t('nav.newMonitor')}</span>
-              </Link>
-            </Button>
-          )}
         </div>
       </div>
 
@@ -617,24 +583,25 @@ export function DashboardPage() {
                 type="button"
                 onClick={() => toggleCollapsed(g.key)}
                 aria-expanded={!isCollapsed}
-                className="hover:text-foreground focus-visible:ring-ring/40 flex min-w-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2"
+                className="hover:text-foreground focus-visible:ring-ring/40 flex min-w-0 items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2"
               >
                 <ChevronRight className={cn('size-3.5 shrink-0 transition-transform duration-150', !isCollapsed && 'rotate-90')} />
                 <span className={cn('size-1.5 shrink-0 rounded-full', groupDot(totals.all))} />
                 <span className="text-foreground truncate">{g.name}</span>
-                <span>{formatNumber(totals.total)}</span>
+                <span className="text-muted-foreground num font-normal">{formatNumber(totals.total)}</span>
               </button>
             )
-            const upLabel = <span className="label-mono pr-1">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
+            const upLabel = (
+              <span className="text-muted-foreground num text-xs">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
+            )
             return view === 'list' ? (
               <Panel key={g.key} title={header} actions={upLabel}>
                 {!isCollapsed && renderMonitors(g.monitors)}
               </Panel>
             ) : (
               <section key={g.key}>
-                <div className="label-mono mb-2 flex items-center gap-3 px-1">
+                <div className="mb-3 flex items-center justify-between gap-3 px-1">
                   {header}
-                  <span className="divider-dots flex-1" />
                   {upLabel}
                 </div>
                 {!isCollapsed && renderMonitors(g.monitors)}
@@ -643,7 +610,7 @@ export function DashboardPage() {
           })
         : filtered.length > 0 &&
           (view === 'list' ? (
-            <Panel title={t('dash.monitorsTitle')} actions={<span className="label-mono pr-1">{formatNumber(filtered.length)}</span>}>
+            <Panel title={t('dash.monitorsTitle')} actions={<span className="text-muted-foreground num pr-1 text-xs">{formatNumber(filtered.length)}</span>}>
               {renderMonitors(filtered)}
             </Panel>
           ) : (

@@ -404,6 +404,11 @@ export const en = {
   "col.status": "Status",
   "sort.by": "Sort by {col}",
   "dash.monitorsTitle": "Monitors",
+  "nav.docs": "Documentation",
+  "sidebar.collapse": "Collapse sidebar",
+  "sidebar.expand": "Expand sidebar",
+  "detail.vsAvg": "vs 24h average of {avg}",
+  "card.uptime": "{value} uptime",
 }
 
 export type Dict = typeof en

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
-import { KpiTile, TickSparkline } from '@/components/kpi-tile'
+import { KpiTile, type Delta } from '@/components/kpi-tile'
 import { Panel } from '@/components/panel'
 import { LatencyChart } from '@/components/latency-chart'
 import { StatusBadge } from '@/components/status-badge'
@@ -27,6 +27,7 @@ import {
   formatDay,
   formatDuration,
   formatLatency,
+  formatNumber,
   formatRelative,
   formatUptime,
   monitorTarget,
@@ -47,7 +48,7 @@ function Section({
   info,
   aside,
   children,
-  bodyClassName = 'p-4',
+  bodyClassName = 'px-5 pb-5',
 }: {
   title: string
   info?: string
@@ -67,7 +68,7 @@ function Legend({ items }: { items: { cls: string; label: string }[] }) {
     <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
       {items.map((it) => (
         <span key={it.label} className="flex items-center gap-1.5">
-          <span className={cn('size-2 rounded-[2px]', it.cls)} />
+          <span className={cn('h-3 w-1.5 rounded-full', it.cls)} />
           {it.label}
         </span>
       ))}
@@ -115,7 +116,7 @@ function UptimeStrip({ monitorId, now }: { monitorId: number; now: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const days = useMemo(() => dailyUptime(q.data ?? [], now), [q.data, Math.floor(now / 3_600_000), lang])
   const tone = (r: number | null) =>
-    r === null ? 'bg-cell-empty' : r >= 99.5 ? 'bg-cell-ok' : r >= 95 ? 'bg-pending' : 'bg-down'
+    r === null ? 'bg-bar-empty' : r >= 99.5 ? 'bg-bar-ok' : r >= 95 ? 'bg-pending' : 'bg-down'
   const withData = days.filter((d) => d.ratio !== null)
   const overall = withData.length ? withData.reduce((a, d) => a + (d.ratio ?? 0), 0) / withData.length : null
   return (
@@ -128,12 +129,12 @@ function UptimeStrip({ monitorId, now }: { monitorId: number; now: number }) {
         <Skeleton className="h-9 w-full" />
       ) : (
         <>
-          <div className="grid grid-cols-[repeat(30,minmax(0,1fr))] gap-[3px]" role="img" aria-label={t('detail.uptime30')}>
+          <div className="grid grid-cols-[repeat(30,minmax(0,1fr))] gap-1" role="img" aria-label={t('detail.uptime30')}>
             {days.map((d) => (
               <span
                 key={d.start}
                 title={`${formatDay(d.start)} · ${d.ratio === null ? t('detail.noData') : formatUptime(d.ratio, 2)}`}
-                className={cn('aspect-square max-h-4 w-full rounded-[2px] transition-transform hover:scale-125', tone(d.ratio))}
+                className={cn('h-9 w-full rounded-full transition-opacity hover:opacity-70', tone(d.ratio))}
               />
             ))}
           </div>
@@ -143,10 +144,10 @@ function UptimeStrip({ monitorId, now }: { monitorId: number; now: number }) {
           </div>
           <Legend
             items={[
-              { cls: 'bg-cell-ok', label: t('legend.healthy') },
+              { cls: 'bg-bar-ok', label: t('legend.healthy') },
               { cls: 'bg-pending', label: t('legend.degraded') },
               { cls: 'bg-down', label: t('legend.outage') },
-              { cls: 'bg-cell-empty', label: t('detail.noData') },
+              { cls: 'bg-bar-empty', label: t('detail.noData') },
             ]}
           />
         </>
@@ -194,9 +195,9 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
       ) : (
         <div role="table" className="text-sm">
           <div role="row" className="grid grid-cols-[minmax(0,1.3fr)_5.5rem_6rem] gap-3 border-b px-4 py-2.5">
-            <span role="columnheader" className="label-mono text-[10px]">{t('detail.colStarted')}</span>
-            <span role="columnheader" className="label-mono text-[10px]">{t('detail.colDuration')}</span>
-            <span role="columnheader" className="label-mono text-right text-[10px]">{t('col.status')}</span>
+            <span role="columnheader" className="text-muted-foreground text-xs">{t('detail.colStarted')}</span>
+            <span role="columnheader" className="text-muted-foreground text-xs">{t('detail.colDuration')}</span>
+            <span role="columnheader" className="text-muted-foreground text-right text-xs">{t('col.status')}</span>
           </div>
           {incidents.map((inc) => {
             const ongoing = inc.end === null && currentlyDown
@@ -215,8 +216,8 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
                     {duration}
                   </span>
                   <span role="cell" className="flex justify-end">
-                    <Badge variant={ongoing ? 'down' : 'up'}>
-                      {ongoing ? <X className="size-3" strokeWidth={2.5} /> : <Check className="size-3" strokeWidth={2.5} />}
+                    <Badge variant={ongoing ? 'down' : 'up'} className="gap-1.5 pl-2">
+                      <span className="size-1.5 rounded-full bg-current" />
                       {ongoing ? t('detail.ongoing') : t('detail.resolved')}
                     </Badge>
                   </span>
@@ -256,6 +257,20 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
     placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === m.id ? prev : undefined),
   })
   const events = useQuery({ queryKey: ['events', m.id], queryFn: () => api.events(m.id, 50) })
+
+  // Honest comparison: current response vs the 24h average (both from the API).
+  const avg24 = stats.data?.avg_latency_24h
+  const latencyDelta: Delta | undefined =
+    m.latency_ms != null && avg24 != null && avg24 > 0 && m.active
+      ? (() => {
+          const pct = ((m.latency_ms - avg24) / avg24) * 100
+          return {
+            dir: pct >= 0 ? 'up' : 'down',
+            good: pct <= 0,
+            text: `${formatNumber(Math.abs(pct), 1)}%`,
+          }
+        })()
+      : undefined
 
   const target = monitorTarget(m)
   const isLink = m.type !== 'tcp' && !!m.url
@@ -396,19 +411,20 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
       </Section>
 
       {/* KPIs */}
-      <Panel bare>
-        <div className="grid grid-cols-2 gap-1">
+      <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <KpiTile
             label={t('detail.kpiCurrent')}
             value={formatLatency(m.latency_ms)}
-            spark={<TickSparkline values={m.beats.slice(-10).map((b) => b.l ?? 0)} className="hidden sm:flex" />}
+            delta={latencyDelta}
+            sub={stats.data?.avg_latency_24h != null ? t('detail.vsAvg', { avg: formatLatency(stats.data.avg_latency_24h) }) : undefined}
           />
           <KpiTile
             label={t('detail.kpiAvg')}
-            value={stats.isPending ? <Skeleton className="h-7 w-16" /> : formatLatency(stats.data?.avg_latency_24h)}
+            value={stats.isPending ? <Skeleton className="h-8 w-16" /> : formatLatency(stats.data?.avg_latency_24h)}
           />
         </div>
-        <div className="mt-1 grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-3 gap-3">
           {(
             [
               ['range.24h.short', stats.data?.uptime_24h],
@@ -420,22 +436,22 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
               key={k}
               label={
                 <>
-                  <span className="hidden sm:inline">{t('detail.uptime')} ·</span>
+                  <span className="hidden sm:inline">{t('detail.uptime')} · </span>
                   {t(k)}
                 </>
               }
-              value={stats.isPending ? <Skeleton className="h-7 w-14" /> : <span className="text-xl sm:text-[1.75rem]">{formatUptime(v)}</span>}
+              value={stats.isPending ? <Skeleton className="h-8 w-14" /> : <span className="text-xl sm:text-2xl">{formatUptime(v)}</span>}
             />
           ))}
         </div>
-      </Panel>
+      </div>
 
       {/* Chart */}
       <Section
         title={t('detail.responseTime')}
         info={t('info.chart')}
         aside={
-          <div className="bg-card flex rounded-lg border p-0.5" role="tablist">
+          <div className="bg-muted flex rounded-full p-1" role="tablist">
             {ranges.map((r) => (
               <button
                 key={r.hours}
@@ -445,7 +461,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
                 onClick={() => setHours(r.hours)}
                 className={cn(
                   'text-muted-foreground hover:text-foreground num rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                  hours === r.hours && 'bg-foreground text-background',
+                  hours === r.hours && 'bg-card text-foreground shadow-xs dark:bg-accent',
                 )}
               >
                 {t(r.short)}
