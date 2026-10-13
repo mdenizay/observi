@@ -124,3 +124,19 @@ export interface BeatEvent {
   m: string | null
   status: MonitorStatus
 }
+
+export interface UpdateInfo {
+  current: string
+  latest: string | null
+  available: boolean
+  release_url: string | null
+  published_at: number | null
+  notes: string | null
+  checked_at: number | null
+  auto_update: boolean
+  mode: 'systemd' | 'docker' | 'manual'
+  can_apply: boolean
+  state: 'idle' | 'checking' | 'updating' | 'error'
+  error: string | null
+  last_result: { ok: boolean; version: string; error: string | null; at: number } | null
+}

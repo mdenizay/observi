@@ -189,7 +189,7 @@ export function GroupsPage() {
           <EmptyState kind="search" title={t('common.noResults')} />
         </ListCard>
       ) : (
-        <ListCard title={t('groups.count', { count: list.length })} head={[t('common.name'), t('col.status')]}>
+        <ListCard>
           {list.map((g) => (
             <ListRow
               key={g.id}

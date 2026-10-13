@@ -12,6 +12,7 @@ import type {
   Notification,
   NotificationInput,
   Role,
+  UpdateInfo,
   User,
 } from './types'
 
@@ -132,6 +133,12 @@ export const api = {
   updateBrandName: (name: string) => put<Brand>('/branding', { name }),
   uploadLogo: (file: Blob) => put<Brand>('/branding/logo', file),
   deleteLogo: () => del<Brand>('/branding/logo'),
+
+  version: () => get<{ version: string }>('/version', { silent401: true }),
+  updateInfo: () => get<UpdateInfo>('/update'),
+  updateCheck: () => post<UpdateInfo>('/update/check'),
+  updateApply: () => post<UpdateInfo>('/update/apply'),
+  updateSettings: (auto_update: boolean) => put<UpdateInfo>('/update/settings', { auto_update }),
 
   groups: () => get<Group[]>('/groups'),
   createGroup: (g: { name: string; monitor_ids?: number[] }) => post<{ id: number }>('/groups', g),

@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 
-// Show the backend's version in the UI (falls back to the web package version).
+// The server's version (from ../Cargo.toml), baked into the UI at build time.
 function appVersion(): string {
   try {
     const toml = readFileSync(path.resolve(import.meta.dirname, '../Cargo.toml'), 'utf8')

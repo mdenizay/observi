@@ -1,2 +1,2 @@
-/** App version injected by Vite (see vite.config.ts). */
+/** App version injected by Vite at build time (see vite.config.ts). */
 declare const __APP_VERSION__: string

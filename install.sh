@@ -14,6 +14,8 @@ DATA_DIR="/var/lib/observi"
 CONF_DIR="/etc/observi"
 ENV_FILE="$CONF_DIR/observi.env"
 UNIT="/etc/systemd/system/observi.service"
+UPDATE_PATH_UNIT="/etc/systemd/system/observi-update.path"
+UPDATE_SVC_UNIT="/etc/systemd/system/observi-update.service"
 
 VERSION="latest"
 LISTEN=""
@@ -67,8 +69,8 @@ command -v systemctl >/dev/null 2>&1 || die "systemd is required"
 
 if [ "$UNINSTALL" -eq 1 ]; then
   say "Stopping and removing the service"
-  systemctl disable --now observi >/dev/null 2>&1 || true
-  rm -f "$UNIT" "$BIN"
+  systemctl disable --now observi observi-update.path >/dev/null 2>&1 || true
+  rm -f "$UNIT" "$UPDATE_PATH_UNIT" "$UPDATE_SVC_UNIT" "$BIN"
   systemctl daemon-reload
   if [ "$PURGE" -eq 1 ]; then
     rm -rf "$DATA_DIR" "$CONF_DIR"
@@ -151,6 +153,8 @@ else
   if [ -n "$LISTEN" ]; then set_env OBSERVI_LISTEN "$LISTEN"; fi
   if [ -n "$LANG_OPT" ]; then set_env OBSERVI_LANG "$LANG_OPT"; fi
 fi
+# Lets the web UI offer one-click / automatic updates through the units below.
+set_env OBSERVI_UPDATER systemd
 chmod 0644 "$ENV_FILE"
 # shellcheck disable=SC1090
 DB_PATH="$(. "$ENV_FILE"; echo "${OBSERVI_DB:-$DATA_DIR/observi.db}")"
@@ -192,6 +196,31 @@ MemoryMax=256M
 WantedBy=multi-user.target
 EOF
 
+# Self-update: the unprivileged service drops a request file into its data
+# directory; this root-owned path unit picks it up and runs `observi self-update`,
+# which verifies the release checksum, swaps the binary and restarts Observi.
+cat > "$UPDATE_PATH_UNIT" <<EOF
+[Unit]
+Description=Observi update trigger
+
+[Path]
+PathExists=$DATA_DIR/update-request
+Unit=observi-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > "$UPDATE_SVC_UNIT" <<EOF
+[Unit]
+Description=Observi self-update
+
+[Service]
+Type=oneshot
+EnvironmentFile=-$ENV_FILE
+ExecStart=$BIN self-update --request $DATA_DIR/update-request --restart
+EOF
+
 # ---- first superadmin (fresh database only) ---------------------------------
 GENERATED=""
 if [ "$CREATE_ADMIN" -eq 1 ] && [ ! -e "$DB_PATH" ]; then
@@ -210,6 +239,7 @@ fi
 # ---- start ------------------------------------------------------------------
 systemctl daemon-reload
 systemctl enable observi >/dev/null 2>&1
+systemctl enable --now observi-update.path >/dev/null 2>&1
 systemctl restart observi
 
 say "Waiting for Observi to start"

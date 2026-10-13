@@ -289,7 +289,7 @@ export function UsersPage() {
           <EmptyState kind={q ? 'search' : 'users'} title={t('common.noResults')} />
         </ListCard>
       ) : (
-        <ListCard title={t('users.count', { count: list.length })} head={[t('users.colName'), t('users.colRole')]}>
+        <ListCard>
           {list.map((u) => (
             <ListRow
               key={u.id}

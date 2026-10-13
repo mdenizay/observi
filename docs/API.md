@@ -114,3 +114,14 @@ The product name and logo are configurable. The server also injects them into `i
 - `PUT /api/branding/logo` (superadmin) raw image body with its `Content-Type`
   (png, jpeg, webp, gif or svg+xml; max 512 KB) → `{name, logo}`
 - `DELETE /api/branding/logo` (superadmin) → `{name, logo}`
+
+## Updates
+- `GET /api/version` (public) → `{version}`
+- `GET /api/update` (superadmin) → `{current, latest, available, release_url, published_at, notes, checked_at,
+  auto_update, mode: "systemd"|"docker"|"manual", can_apply, state: "idle"|"checking"|"updating"|"error",
+  error, last_result: {ok, version, error, at}|null}`
+- `POST /api/update/check` (superadmin) — check GitHub now
+- `POST /api/update/apply` (superadmin) — install the latest release (systemd installs only;
+  errors `update_not_supported`, `no_update`, `update_in_progress`)
+- `PUT /api/update/settings` (superadmin) `{auto_update}`
+

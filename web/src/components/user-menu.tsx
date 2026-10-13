@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronsUpDown, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
+import { ArrowUpCircle, BookOpen, ChevronsUpDown, ExternalLink, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar } from '@/components/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useUser } from '@/hooks/use-auth'
 import { useTheme, type ThemeMode } from '@/hooks/use-theme'
+import { BUILD_VERSION, useUpdateInfo } from '@/hooks/use-update'
 import { LANGS, useI18n, type Lang } from '@/i18n'
 import { api } from '@/lib/api'
 
@@ -22,17 +23,7 @@ import { api } from '@/lib/api'
  * Bottom-of-sidebar account menu: user info, language, theme, settings and sign out.
  * `compact` renders only the avatar (mobile top bar) and opens downward.
  */
-export function UserMenu({
-  compact = false,
-  onNavigate,
-  side,
-  align,
-}: {
-  compact?: boolean
-  onNavigate?: () => void
-  side?: 'top' | 'bottom' | 'right'
-  align?: 'start' | 'end'
-}) {
+export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
   const { t, lang, setLang } = useI18n()
   const { mode, setMode } = useTheme()
   const user = useUser()
@@ -41,6 +32,11 @@ export function UserMenu({
   const isAdmin = user.role === 'superadmin'
   const display = user.name || user.username
   const role = isAdmin ? t('role.superadmin') : t('role.user')
+  const { data: update } = useUpdateInfo()
+  const hasUpdate = isAdmin && !!update?.available && !!update.latest
+  const dot = hasUpdate && (
+    <span className="bg-up ring-sidebar absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2" aria-hidden />
+  )
 
   const logout = async () => {
     try {
@@ -61,17 +57,21 @@ export function UserMenu({
           <button
             type="button"
             aria-label={t('usermenu.open')}
-            className="focus-visible:ring-ring/50 rounded-full outline-none focus-visible:ring-[3px]"
+            className="focus-visible:ring-ring/50 relative rounded-full outline-none focus-visible:ring-[3px]"
           >
             <Avatar name={display} />
+            {dot}
           </button>
         ) : (
           <button
             type="button"
             aria-label={t('usermenu.open')}
-            className="hover:bg-sidebar-active/70 data-[state=open]:bg-sidebar-active focus-visible:ring-ring/40 flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
+            className="hover:bg-accent data-[state=open]:bg-accent focus-visible:ring-ring/50 flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
           >
-            <Avatar name={display} />
+            <span className="relative">
+              <Avatar name={display} />
+              {dot}
+            </span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm leading-tight font-medium">{display}</div>
               <div className="text-muted-foreground truncate text-xs leading-tight">{role}</div>
@@ -81,8 +81,8 @@ export function UserMenu({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side={side ?? (compact ? 'bottom' : 'top')}
-        align={align ?? (compact ? 'end' : 'start')}
+        side={compact ? 'bottom' : 'top'}
+        align={compact ? 'end' : 'start'}
         className="w-64 max-w-[calc(100vw-1.5rem)]"
       >
         <div className="flex items-center gap-2.5 px-2 py-2">
@@ -90,6 +90,7 @@ export function UserMenu({
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{display}</div>
             <div className="text-muted-foreground truncate text-xs">@{user.username}</div>
+            <div className="text-muted-foreground/70 num mt-0.5 text-[11px]">{t('user.version', { v: BUILD_VERSION })}</div>
           </div>
           <Badge variant={isAdmin ? 'default' : 'secondary'} className="shrink-0">
             {role}
@@ -134,6 +135,18 @@ export function UserMenu({
         </div>
 
         <DropdownMenuSeparator />
+        {hasUpdate && (
+          <DropdownMenuItem
+            className="text-up focus:text-up"
+            onSelect={() => {
+              onNavigate?.()
+              navigate('/settings#updates')
+            }}
+          >
+            <ArrowUpCircle />
+            {t('upd.menuEntry', { v: update!.latest! })}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onSelect={() => {
             onNavigate?.()
@@ -142,6 +155,13 @@ export function UserMenu({
         >
           <Settings />
           {t('nav.settings')}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href="https://github.com/mdenizay/observi" target="_blank" rel="noreferrer noopener">
+            <BookOpen />
+            <span className="flex-1">{t('nav.docs')}</span>
+            <ExternalLink className="size-3.5 opacity-60" />
+          </a>
         </DropdownMenuItem>
         <DropdownMenuItem destructive onSelect={logout}>
           <LogOut />

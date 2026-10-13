@@ -27,7 +27,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=server /src/target/release/observi /usr/local/bin/observi
 COPY --from=server --chown=65532:65532 /data /data
 ENV OBSERVI_DB=/data/observi.db \
-    OBSERVI_LISTEN=0.0.0.0:3001
+    OBSERVI_LISTEN=0.0.0.0:3001 \
+    OBSERVI_UPDATER=docker
 VOLUME ["/data"]
 EXPOSE 3001
 USER nonroot

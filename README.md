@@ -18,6 +18,8 @@ It runs happily on a Raspberry Pi.
   24h / 7d / 30d uptime, a 30-day uptime strip and incident history
 - **Command palette** (⌘K / Ctrl+K) to jump to any monitor or page, plus keyboard shortcuts
 - **Notifications** via Telegram, SMTP e-mail and webhooks (generic JSON, Discord, Slack)
+- **Updates** — the dashboard notifies superadmins about new releases; one-click or fully automatic
+  updates on systemd installs (`install.sh`), `docker compose pull` instructions for Docker
 - **White-label**: set your own product name and logo in Settings
 - **English and Turkish** UI (language switcher in the app); notification language is configurable
 - **Frugal by design** — SQLite in WAL mode, batched heartbeat writes (gentle on SD cards),
@@ -115,6 +117,7 @@ Environment variables (set them in `/etc/observi/observi.env`, then
 | `OBSERVI_RETENTION` | `90` | Heartbeat retention in days |
 | `OBSERVI_LANG` | `en` | Language of notifications: `en` or `tr` |
 | `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` | `admin` / generated | First superadmin, created only when the database has no users |
+| `OBSERVI_UPDATE_CHECK` | `1` | Set to `0` to stop checking GitHub for new releases |
 | `RUST_LOG` | `info` | Log level |
 
 ## Command line

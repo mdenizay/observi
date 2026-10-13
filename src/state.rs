@@ -97,6 +97,7 @@ pub struct AppState {
     pub clients: Arc<crate::check::Clients>,
     /// Flips to true on shutdown so long-lived SSE streams end and the server can drain.
     pub shutdown: Arc<watch::Sender<bool>>,
+    pub updater: Arc<crate::update::Updater>,
 }
 
 impl AppState {

@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use crate::auth::{self, Admin, AuthUser, COOKIE, SESSION_TTL_MS};
 use crate::brand;
+use crate::update;
 use crate::db::now_ms;
 use crate::models::{self, Monitor, MonitorConfig, Role, User};
 use crate::notify::{self, NotificationInput};
@@ -86,6 +87,11 @@ pub fn router() -> Router<AppState> {
         .route("/monitors/{id}/heartbeats", get(monitor_heartbeats))
         .route("/monitors/{id}/events", get(monitor_events))
         .route("/events", get(events))
+        .route("/version", get(version))
+        .route("/update", get(update_status))
+        .route("/update/check", post(update_check))
+        .route("/update/apply", post(update_apply))
+        .route("/update/settings", put(update_settings))
         .route("/branding", get(get_branding).put(put_branding))
         .route(
             "/branding/logo",
@@ -624,6 +630,52 @@ async fn events(
         }
     });
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(20))))
+}
+
+// ---------- updates ----------
+
+async fn version() -> Json<Value> {
+    Json(json!({ "version": update::CURRENT }))
+}
+
+async fn update_json(st: &AppState) -> ApiResult<Json<Value>> {
+    let auto = st.db.call(|c| Ok(update::auto_update_enabled(c))).await?;
+    Ok(Json(json!(st.updater.status(auto))))
+}
+
+async fn update_status(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    update_json(&st).await
+}
+
+async fn update_check(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    st.updater.check(&st.http).await;
+    update_json(&st).await
+}
+
+async fn update_apply(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    update::request(&st).map_err(|code| {
+        let msg = match code {
+            "update_not_supported" => "This installation cannot update itself",
+            "update_in_progress" => "An update is already in progress",
+            _ => "No newer version is available",
+        };
+        bad(code, msg)
+    })?;
+    update_json(&st).await
+}
+
+#[derive(Deserialize)]
+struct UpdateSettingsReq {
+    auto_update: bool,
+}
+
+async fn update_settings(
+    State(st): State<AppState>,
+    Admin(_): Admin,
+    Json(req): Json<UpdateSettingsReq>,
+) -> ApiResult<Json<Value>> {
+    st.db.call(move |c| update::set_auto_update(c, req.auto_update)).await?;
+    update_json(&st).await
 }
 
 // ---------- branding ----------

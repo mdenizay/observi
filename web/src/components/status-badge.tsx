@@ -19,11 +19,10 @@ export const statusDot: Record<MonitorStatus, string> = {
   unknown: 'bg-muted-foreground/40',
 }
 
-/** Soft tinted pill with a status dot. */
 export function StatusBadge({ status, className }: { status: MonitorStatus; className?: string }) {
   return (
-    <Badge variant={variant[status]} className={cn('gap-1.5 pl-2', className)}>
-      <span className={cn('size-1.5 rounded-full bg-current')} />
+    <Badge variant={variant[status]} className={className}>
+      <span className={cn('size-1.5 rounded-full', statusDot[status], status === 'down' && 'animate-pulse')} />
       {statusLabel(status)}
     </Badge>
   )
@@ -31,7 +30,7 @@ export function StatusBadge({ status, className }: { status: MonitorStatus; clas
 
 export function UptimeBadge({ value, className }: { value: number | null | undefined; className?: string }) {
   return (
-    <Badge variant={uptimeTone(value)} className={cn('num min-w-14 justify-center', className)}>
+    <Badge variant={uptimeTone(value)} className={cn('min-w-14 justify-center', className)}>
       {formatUptime(value, value !== null && value !== undefined && value < 100 ? 1 : 0)}
     </Badge>
   )

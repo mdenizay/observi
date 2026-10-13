@@ -1,11 +1,20 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ArrowDown, ArrowUpDown, ChevronRight, LayoutGrid, List, Plus, Search, X, type LucideIcon } from 'lucide-react'
+import {
+  ArrowDownCircle,
+  ArrowUpCircle,
+  ChevronRight,
+  Clock,
+  LayoutGrid,
+  List,
+  PauseCircle,
+  Plus,
+  Search,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { EmptyState } from '@/components/empty-state'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
-import { KpiTile } from '@/components/kpi-tile'
-import { PageHeader } from '@/components/app-shell'
-import { Panel } from '@/components/panel'
 import { MonitorDetail } from '@/components/monitor-detail'
 import { Sparkline } from '@/components/sparkline'
 import { StatusBadge, statusDot } from '@/components/status-badge'
@@ -36,7 +45,12 @@ function effectiveStatus(m: MonitorSummary): Eff {
 
 const statusOrder: Record<Eff, number> = { down: 0, pending: 1, up: 2, paused: 3 }
 
-const tileTone: Record<Eff, string> = { up: '', down: 'text-down', pending: 'text-pending', paused: '' }
+const tileStyle: Record<Eff, { icon: LucideIcon; text: string; active: string }> = {
+  up: { icon: ArrowUpCircle, text: 'text-up', active: 'border-up/45 bg-up/[0.06] ring-up/25' },
+  down: { icon: ArrowDownCircle, text: 'text-down', active: 'border-down/45 bg-down/[0.06] ring-down/25' },
+  pending: { icon: Clock, text: 'text-pending', active: 'border-pending/45 bg-pending/[0.06] ring-pending/25' },
+  paused: { icon: PauseCircle, text: 'text-paused', active: 'border-paused/45 bg-paused/[0.06] ring-paused/25' },
+}
 
 function readView(): View {
   try {
@@ -46,57 +60,50 @@ function readView(): View {
   }
 }
 
-/* ---------------------------------------------------------------- KPI tiles */
+/* ---------------------------------------------------------------- hero + tiles */
 
 function StatusTiles({
-  monitors,
   counts,
+  loaded,
   filter,
   onToggle,
 }: {
-  monitors: MonitorSummary[] | undefined
   counts: Record<Eff, number>
+  loaded: boolean
   filter: Eff | null
   onToggle: (s: Eff) => void
 }) {
   const { t } = useI18n()
   const order: Eff[] = ['up', 'down', 'pending', 'paused']
-  const avgUp = useMemo(() => {
-    const l = (monitors ?? [])
-      .filter((m) => effectiveStatus(m) === 'up' && m.latency_ms !== null)
-      .map((m) => m.latency_ms as number)
-    return l.length ? l.reduce((a, b) => a + b, 0) / l.length : null
-  }, [monitors])
-  const total = monitors?.length ?? 0
-
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-      {order.map((s) => (
-        <KpiTile
-          key={s}
-          as="button"
-          active={filter === s}
-          onClick={() => onToggle(s)}
-          label={
-            <span className="flex items-center gap-2">
-              <span className={cn('size-2 shrink-0 rounded-full', statusDot[s])} />
-              {t(`status.${s}` as const)}
-            </span>
-          }
-          value={
-            monitors ? (
-              <span className={cn(counts[s] > 0 && tileTone[s])}>{counts[s]}</span>
-            ) : (
-              <Skeleton className="h-8 w-10" />
-            )
-          }
-          sub={
-            s === 'up' && avgUp !== null
-              ? t('dash.avgShort', { latency: formatLatency(avgUp) })
-              : t('dash.ofTotal', { total: formatNumber(total) })
-          }
-        />
-      ))}
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
+      {order.map((s) => {
+        const st = tileStyle[s]
+        const active = filter === s
+        return (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onToggle(s)}
+            className={cn(
+              'bg-card shadow-card hover:border-border-strong focus-visible:ring-ring/50 flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
+              active && cn('ring-2', st.active),
+            )}
+          >
+            <div className="min-w-0">
+              <div className="text-muted-foreground flex items-center gap-1.5 truncate text-xs font-medium">
+                <span className={cn('size-1.5 shrink-0 rounded-full', statusDot[s])} />
+                {t(`status.${s}` as const)}
+              </div>
+              <div className={cn('num mt-1 text-2xl font-semibold', counts[s] > 0 ? st.text : 'text-foreground/70')}>
+                {loaded ? counts[s] : <Skeleton className="h-8 w-10" />}
+              </div>
+            </div>
+            <st.icon className={cn('size-5 shrink-0', active ? st.text : 'text-muted-foreground/50')} />
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -123,24 +130,29 @@ const MonitorCard = memo(function MonitorCard({
       onClick={() => onOpen(m.id)}
       aria-pressed={selected}
       className={cn(
-        'bg-card shadow-card focus-visible:ring-ring/40 hover:bg-accent/30 flex min-w-0 flex-col gap-3.5 rounded-2xl border p-4 text-left transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px] sm:p-5',
-        status === 'down' && 'bg-down/[0.06] ring-down/30 hover:bg-down/[0.09] ring-1',
+        'bg-card shadow-card focus-visible:ring-ring/50 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-4 text-left transition-[border-color,box-shadow,background-color] duration-150 outline-none focus-visible:ring-[3px]',
+        status === 'down' && 'border-down/40 bg-down/[0.045] hover:border-down/60',
         paused && 'opacity-60 hover:opacity-90',
-        selected && 'ring-foreground/40 ring-2',
+        selected && 'ring-primary/50 border-primary/50 ring-2',
       )}
     >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-medium">{m.name}</div>
-          <div className="text-muted-foreground mt-0.5 truncate text-xs">{monitorTarget(m) || '—'}</div>
-        </div>
+      <div className="flex items-center gap-2.5">
+        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
         <StatusBadge status={status} className="shrink-0" />
       </div>
+      <div className="text-muted-foreground -mt-1.5 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
       <HeartbeatBar beats={m.beats} max={40} size="sm" stretch />
-      <div className="text-muted-foreground flex items-center gap-4 text-xs whitespace-nowrap">
-        <span className="num text-foreground font-medium">{paused ? '—' : formatLatency(m.latency_ms)}</span>
-        <span className="num">{t('card.uptime', { value: formatUptime(m.uptime_24h, 1) })}</span>
-        <span className="ml-auto truncate">{m.last_check ? formatRelative(m.last_check, now) : t('dash.noChecks')}</span>
+      <div className="text-muted-foreground grid grid-cols-[1fr_1fr_1.5fr] gap-2 border-t pt-2.5 text-xs whitespace-nowrap">
+        <span className="num text-foreground truncate font-medium" title={t('detail.latencyNow')}>
+          {paused ? '—' : formatLatency(m.latency_ms)}
+        </span>
+        <span className="num truncate" title={`${t('detail.uptime')} · ${t('range.24h')}`}>
+          {formatUptime(m.uptime_24h, 1)}
+        </span>
+        <span className="truncate text-right" title={t('detail.lastCheck')}>
+          {m.last_check ? formatRelative(m.last_check, now) : t('dash.noChecks')}
+        </span>
       </div>
     </button>
   )
@@ -148,74 +160,40 @@ const MonitorCard = memo(function MonitorCard({
 
 function SkeletonCard() {
   return (
-    <div className="bg-card flex flex-col gap-3.5 rounded-2xl border p-5">
+    <div className="bg-card flex flex-col gap-3 rounded-xl border p-4">
       <div className="flex items-center gap-2">
         <Skeleton className="size-2 rounded-full" />
         <Skeleton className="h-4 flex-1" />
         <Skeleton className="h-5 w-16 rounded-full" />
       </div>
       <Skeleton className="h-3 w-2/3" />
-      <div className="flex justify-between">
-        {Array.from({ length: 28 }, (_, i) => (
-          <span key={i} className="bg-bar-empty h-[22px] w-1 animate-pulse rounded-full" />
-        ))}
-      </div>
       <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-3 w-full" />
     </div>
   )
 }
 
 /* ---------------------------------------------------------------- list view */
 
-// name | status | history | sparkline | response | uptime | last check | chevron
+// name | history | sparkline | latency | uptime | last check | chevron
 const rowGrid =
-  'grid grid-cols-[minmax(0,1fr)_5.5rem_1rem] md:grid-cols-[minmax(0,1.3fr)_6.5rem_minmax(0,1fr)_5.5rem_5rem_1rem] xl:grid-cols-[minmax(0,1.3fr)_6.5rem_minmax(0,1fr)_6rem_5.5rem_5rem_7rem_1rem] items-center gap-4'
+  'grid grid-cols-[minmax(0,1fr)_5.5rem_1rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_5.5rem_5rem_1rem] xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_6rem_5.5rem_5rem_7rem_1rem] items-center gap-4'
 
-function SortHead({
-  label,
-  active,
-  onClick,
-  align,
-  className,
-}: {
-  label: string
-  active: boolean
-  onClick?: () => void
-  align?: 'right'
-  className?: string
-}) {
+function ListHeader() {
   const { t } = useI18n()
-  if (!onClick)
-    return <span className={cn('text-muted-foreground truncate text-xs', align === 'right' && 'text-right', className)}>{label}</span>
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={t('sort.by', { col: label })}
+    <div
       className={cn(
-        'text-muted-foreground hover:text-foreground focus-visible:text-foreground flex items-center gap-1 text-xs outline-none',
-        align === 'right' && 'justify-end',
-        active && 'text-foreground',
-        className,
+        rowGrid,
+        'bg-card/95 text-muted-foreground sticky top-14 z-10 rounded-t-xl border-b px-4 py-2 text-xs font-medium backdrop-blur',
       )}
     >
-      <span className="truncate">{label}</span>
-      {active ? <ArrowDown className="size-3 shrink-0" /> : <ArrowUpDown className="size-3 shrink-0 opacity-50" />}
-    </button>
-  )
-}
-
-function ListHeader({ sort, onSort }: { sort: Sort; onSort: (s: Sort) => void }) {
-  const { t } = useI18n()
-  return (
-    <div className={cn(rowGrid, 'bg-card/95 sticky top-14 z-10 border-b px-5 py-3 backdrop-blur lg:top-0')}>
-      <SortHead label={t('col.monitor')} active={sort === 'name'} onClick={() => onSort('name')} />
-      <SortHead label={t('col.status')} active={sort === 'status'} onClick={() => onSort('status')} className="hidden md:flex" />
-      <SortHead label={t('col.history')} active={false} className="hidden md:block" />
+      <span>{t('col.monitor')}</span>
+      <span className="hidden md:block">{t('col.history')}</span>
       <span className="hidden xl:block" />
-      <SortHead label={t('col.latency')} active={sort === 'slowest'} onClick={() => onSort('slowest')} align="right" />
-      <SortHead label={t('col.uptime')} active={false} align="right" className="hidden md:block" />
-      <SortHead label={t('col.lastCheck')} active={false} align="right" className="hidden xl:block" />
+      <span className="text-right">{t('col.latency')}</span>
+      <span className="hidden text-right md:block">{t('col.uptime')}</span>
+      <span className="hidden text-right xl:block">{t('col.lastCheck')}</span>
       <span />
     </div>
   )
@@ -242,21 +220,18 @@ const MonitorRow = memo(function MonitorRow({
       aria-pressed={selected}
       className={cn(
         rowGrid,
-        'hover:bg-accent/40 focus-visible:bg-accent/50 w-full border-b px-5 py-3.5 text-left transition-colors duration-150 outline-none last:rounded-b-2xl last:border-b-0',
-        status === 'down' && 'bg-down/[0.05] hover:bg-down/[0.08]',
+        'hover:bg-accent/50 focus-visible:bg-accent/60 w-full border-b px-4 py-2.5 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
+        status === 'down' && 'bg-down/[0.045] hover:bg-down/[0.08]',
         paused && 'text-muted-foreground',
-        selected && 'bg-accent/60',
+        selected && 'bg-primary/[0.07] hover:bg-primary/10',
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
+        <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} title={t(`status.${status}` as const)} />
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{m.name}</div>
           <div className="text-muted-foreground truncate text-xs">{monitorTarget(m) || '—'}</div>
         </div>
-      </div>
-      <div className="hidden md:block">
-        <StatusBadge status={status} />
       </div>
       <div className="hidden min-w-0 md:block">
         <HeartbeatBar beats={m.beats} max={30} size="xs" stretch />
@@ -264,8 +239,8 @@ const MonitorRow = memo(function MonitorRow({
       <div className="hidden xl:block">
         <Sparkline beats={m.beats.slice(-30)} width={96} height={22} />
       </div>
-      <span className="num truncate text-right text-[13px]">{paused ? '—' : formatLatency(m.latency_ms)}</span>
-      <span className="num text-muted-foreground hidden truncate text-right text-[13px] md:block">
+      <span className="num truncate text-right text-sm">{paused ? '—' : formatLatency(m.latency_ms)}</span>
+      <span className="num text-muted-foreground hidden truncate text-right text-sm md:block">
         {formatUptime(m.uptime_24h, 1)}
       </span>
       <span className="text-muted-foreground hidden truncate text-right text-xs xl:block">
@@ -441,12 +416,12 @@ export function DashboardPage() {
         ))}
       </div>
     ) : (
-      <>
-        <ListHeader sort={sort} onSort={setSort} />
+      <div className="bg-card shadow-card rounded-xl border">
+        <ListHeader />
         {list.map((m) => (
           <MonitorRow key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
         ))}
-      </>
+      </div>
     )
 
   const viewBtn = (v: View, Icon: LucideIcon, label: string) => (
@@ -457,8 +432,8 @@ export function DashboardPage() {
       aria-label={label}
       title={label}
       className={cn(
-        'text-muted-foreground hover:text-foreground flex h-7 w-9 items-center justify-center rounded-full transition-colors',
-        view === v && 'bg-card text-foreground shadow-xs dark:bg-accent',
+        'text-muted-foreground hover:text-foreground flex h-7 w-8 items-center justify-center rounded-md transition-colors',
+        view === v && 'bg-card text-foreground shadow-xs',
       )}
     >
       <Icon className="size-4" />
@@ -466,21 +441,8 @@ export function DashboardPage() {
   )
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-6">
-      <PageHeader
-        title={t('nav.dashboard')}
-        actions={
-          isAdmin && (
-            <Button asChild>
-              <Link to="/monitors/new">
-                <Plus />
-                {t('nav.newMonitor')}
-              </Link>
-            </Button>
-          )
-        }
-      />
-      <StatusTiles monitors={monitors} counts={counts} filter={filter} onToggle={toggleFilter} />
+    <div className="flex flex-col gap-4 sm:gap-5">
+      <StatusTiles counts={counts} loaded={!!monitors} filter={filter} onToggle={toggleFilter} />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -512,17 +474,25 @@ export function DashboardPage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as Sort)}
-              className="border-input bg-card dark:bg-input/20 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-xl border px-3 text-sm outline-none focus-visible:ring-[3px]"
+              className="border-input bg-card dark:bg-input/20 focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-lg border px-2.5 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
             >
               <option value="status">{t('dash.sortStatus')}</option>
               <option value="name">{t('dash.sortName')}</option>
               <option value="slowest">{t('dash.sortSlowest')}</option>
             </select>
           </label>
-          <div className="bg-muted flex rounded-full p-1" role="group" aria-label={t('view.label')}>
+          <div className="bg-muted flex rounded-lg border p-0.5" role="group" aria-label={t('view.label')}>
             {viewBtn('grid', LayoutGrid, t('view.grid'))}
             {viewBtn('list', List, t('view.list'))}
           </div>
+          {isAdmin && (
+            <Button asChild className="max-sm:size-9 max-sm:px-0">
+              <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
+                <Plus />
+                <span className="max-sm:sr-only">{t('nav.newMonitor')}</span>
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -578,44 +548,26 @@ export function DashboardPage() {
         ? grouped.map((g) => {
             const isCollapsed = !narrowing && collapsed.has(g.key)
             const totals = groupTotals.get(g.key) ?? { up: 0, total: g.monitors.length, all: g.monitors }
-            const header = (
-              <button
-                type="button"
-                onClick={() => toggleCollapsed(g.key)}
-                aria-expanded={!isCollapsed}
-                className="hover:text-foreground focus-visible:ring-ring/40 flex min-w-0 items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2"
-              >
-                <ChevronRight className={cn('size-3.5 shrink-0 transition-transform duration-150', !isCollapsed && 'rotate-90')} />
-                <span className={cn('size-1.5 shrink-0 rounded-full', groupDot(totals.all))} />
-                <span className="text-foreground truncate">{g.name}</span>
-                <span className="text-muted-foreground num font-normal">{formatNumber(totals.total)}</span>
-              </button>
-            )
-            const upLabel = (
-              <span className="text-muted-foreground num text-xs">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
-            )
-            return view === 'list' ? (
-              <Panel key={g.key} title={header} actions={upLabel}>
-                {!isCollapsed && renderMonitors(g.monitors)}
-              </Panel>
-            ) : (
+            return (
               <section key={g.key}>
-                <div className="mb-3 flex items-center justify-between gap-3 px-1">
-                  {header}
-                  {upLabel}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCollapsed(g.key)}
+                  aria-expanded={!isCollapsed}
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 mb-2.5 flex w-full items-center gap-2.5 rounded-md py-1 text-xs outline-none focus-visible:ring-[3px]"
+                >
+                  <ChevronRight className={cn('size-3.5 shrink-0 transition-transform duration-150', !isCollapsed && 'rotate-90')} />
+                  <span className={cn('size-2 shrink-0 rounded-full', groupDot(totals.all))} />
+                  <span className="text-foreground truncate text-sm font-semibold">{g.name}</span>
+                  <span className="num">{formatNumber(totals.total)}</span>
+                  <span className="bg-border h-px flex-1" />
+                  <span className="num whitespace-nowrap">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
+                </button>
                 {!isCollapsed && renderMonitors(g.monitors)}
               </section>
             )
           })
-        : filtered.length > 0 &&
-          (view === 'list' ? (
-            <Panel title={t('dash.monitorsTitle')} actions={<span className="text-muted-foreground num pr-1 text-xs">{formatNumber(filtered.length)}</span>}>
-              {renderMonitors(filtered)}
-            </Panel>
-          ) : (
-            renderMonitors(filtered)
-          ))}
+        : filtered.length > 0 && renderMonitors(filtered)}
 
       {/* Detail drawer (route-driven) */}
       <Sheet open={selected !== undefined} onOpenChange={(o) => !o && closeDrawer()}>

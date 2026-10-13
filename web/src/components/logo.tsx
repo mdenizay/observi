@@ -53,4 +53,3 @@ export function Logo({ className, onNavigate }: { className?: string; onNavigate
     </Link>
   )
 }
-

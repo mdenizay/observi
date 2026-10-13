@@ -8,7 +8,8 @@ ARG TARGETARCH
 COPY bin/${TARGETARCH}/observi /usr/local/bin/observi
 COPY --from=data --chown=65532:65532 /data /data
 ENV OBSERVI_DB=/data/observi.db \
-    OBSERVI_LISTEN=0.0.0.0:3001
+    OBSERVI_LISTEN=0.0.0.0:3001 \
+    OBSERVI_UPDATER=docker
 VOLUME ["/data"]
 EXPOSE 3001
 USER nonroot

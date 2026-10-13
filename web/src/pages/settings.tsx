@@ -5,9 +5,10 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field } from '@/components/field'
 import { Button } from '@/components/ui/button'
-import { Panel } from '@/components/panel'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { LogoMark } from '@/components/logo'
+import { UpdatesCard } from '@/components/updates-card'
 import { useIsAdmin } from '@/hooks/use-auth'
 import { brandKey, useBrand } from '@/hooks/use-brand'
 import type { Brand } from '@/lib/brand'
@@ -49,8 +50,13 @@ function PasswordCard() {
   }
 
   return (
-    <Panel title={t('settings.pw.title')} description={t('settings.pw.desc')} bodyClassName="px-5 pb-5 grid gap-4">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('settings.pw.title')}</CardTitle>
+        <CardDescription>{t('settings.pw.desc')}</CardDescription>
+      </CardHeader>
       <form onSubmit={submit} noValidate className="contents">
+        <CardContent className="grid gap-4">
           <Field label={t('settings.pw.current')} htmlFor="pw-current" error={errors.current}>
             <Input
               id="pw-current"
@@ -83,14 +89,15 @@ function PasswordCard() {
               />
             </Field>
           </div>
-        <div className="flex justify-end">
+        </CardContent>
+        <CardFooter className="justify-end">
           <Button type="submit" disabled={saving}>
             {saving && <Loader2 className="animate-spin" />}
             {t('settings.pw.submit')}
           </Button>
-        </div>
+        </CardFooter>
       </form>
-    </Panel>
+    </Card>
   )
 }
 
@@ -160,7 +167,12 @@ function BrandingCard() {
   }
 
   return (
-    <Panel title={t('brand.title')} description={t('brand.desc')} bodyClassName="px-5 pb-5 grid gap-5">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('brand.title')}</CardTitle>
+        <CardDescription>{t('brand.desc')}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
         <form onSubmit={saveName} noValidate className="flex items-start gap-2">
           <Field label={t('brand.name')} htmlFor="brand-name" error={nameError} className="flex-1">
             <Input
@@ -195,7 +207,7 @@ function BrandingCard() {
             }}
             className={cn(
               'flex flex-col items-center gap-3 rounded-lg border border-dashed p-4 text-center transition-colors sm:flex-row sm:text-left',
-              dragging && 'border-foreground/60 bg-accent/50',
+              dragging && 'border-primary bg-accent/50',
             )}
           >
             {brand.logo ? (
@@ -230,14 +242,20 @@ function BrandingCard() {
             />
           </div>
         </div>
-      </Panel>
+      </CardContent>
+    </Card>
   )
 }
 
 function LanguageCard() {
   const { t, lang, setLang } = useI18n()
   return (
-    <Panel title={t('lang.label')} description={t('lang.desc')} bodyClassName="px-5 pb-5">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('lang.label')}</CardTitle>
+        <CardDescription>{t('lang.desc')}</CardDescription>
+      </CardHeader>
+      <CardContent>
         <div className="bg-muted inline-flex rounded-md p-0.5" role="radiogroup" aria-label={t('lang.label')}>
           {LANGS.map((l) => (
             <button
@@ -255,7 +273,8 @@ function LanguageCard() {
             </button>
           ))}
         </div>
-      </Panel>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -271,6 +290,11 @@ export function SettingsPage() {
         {isAdmin && (
           <div className="lg:col-span-2">
             <BrandingCard />
+          </div>
+        )}
+        {isAdmin && (
+          <div className="lg:col-span-2">
+            <UpdatesCard />
           </div>
         )}
       </div>

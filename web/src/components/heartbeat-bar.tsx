@@ -1,35 +1,31 @@
 import { memo } from 'react'
 import { useWidth } from '@/hooks/use-width'
-import { getLang, useI18n } from '@/i18n'
 import { beatLabel, formatDateTime, formatLatency } from '@/lib/format'
 import { translateMessage } from '@/lib/messages'
 import type { Beat } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { getLang, useI18n } from '@/i18n'
 
-/**
- * Heartbeat history as a row of thin rounded bars, oldest on the left.
- * Healthy checks are neutral grey so failures (red) and pending (amber) stand out.
- */
-const barColor: Record<number, string> = {
+const color: Record<number, string> = {
   0: 'bg-down',
-  1: 'bg-bar-ok',
+  1: 'bg-up',
   2: 'bg-pending',
-  3: 'bg-paused/40',
+  3: 'bg-paused',
 }
 
 const sizes = {
-  xs: { w: 3, h: 16, gap: 2 },
-  sm: { w: 4, h: 22, gap: 3 },
-  md: { w: 5, h: 26, gap: 3 },
-  lg: { w: 6, h: 32, gap: 3 },
+  xs: { w: 3, h: 14, gap: 2, cls: 'rounded-full' },
+  sm: { w: 4, h: 16, gap: 2, cls: 'rounded-full' },
+  md: { w: 6, h: 22, gap: 2, cls: 'rounded-full' },
+  lg: { w: 8, h: 28, gap: 3, cls: 'rounded-full' },
 } as const
 
 interface Props {
   beats: Beat[]
-  /** Maximum number of bars (fewer if the width doesn't fit). */
+  /** Maximum number of slots to render (fewer if the width doesn't fit). */
   max?: number
   size?: keyof typeof sizes
-  /** Spread the bars over the full width. */
+  /** Pills share the full width evenly instead of using a fixed width. */
   stretch?: boolean
   className?: string
 }
@@ -45,7 +41,8 @@ export const HeartbeatBar = memo(function HeartbeatBar({ beats, max = 30, size =
   const { t } = useI18n() // also re-renders this memoized bar when the language changes
   const [ref, width] = useWidth<HTMLDivElement>()
   const s = sizes[size]
-  const fit = width > 0 ? Math.max(1, Math.floor((width + s.gap) / (s.w + s.gap))) : max
+  const minW = stretch ? 3 : s.w
+  const fit = width > 0 ? Math.max(1, Math.floor((width + s.gap) / (minW + s.gap))) : max
   const count = Math.min(max, fit)
   const shown = beats.slice(-count)
   const empty = count - shown.length
@@ -53,20 +50,26 @@ export const HeartbeatBar = memo(function HeartbeatBar({ beats, max = 30, size =
   return (
     <div
       ref={ref}
-      className={cn('flex w-full items-center overflow-hidden', stretch ? 'justify-between' : 'justify-end', className)}
-      style={{ gap: stretch ? undefined : s.gap, height: s.h }}
+      className={cn('flex w-full items-center overflow-hidden', stretch ? '' : 'justify-end', className)}
+      style={{ gap: s.gap, height: s.h }}
       role="img"
       aria-label={t('heartbeat.recent')}
     >
       {Array.from({ length: empty }, (_, i) => (
-        <span key={`e${i}`} className="bg-bar-empty shrink-0 rounded-full" style={{ width: s.w, height: s.h }} />
+        <span key={`e${i}`} className={cn('bg-empty', stretch ? 'min-w-0 flex-1' : 'shrink-0', s.cls)}
+          style={stretch ? { height: s.h } : { width: s.w, height: s.h }} />
       ))}
       {shown.map((b) => (
         <span
           key={b.t}
           title={beatTitle(b)}
-          className={cn('shrink-0 rounded-full transition-opacity duration-150 hover:opacity-70', barColor[b.s] ?? 'bg-bar-empty')}
-          style={{ width: s.w, height: s.h }}
+          className={cn(
+            'transition-opacity hover:opacity-70',
+            stretch ? 'min-w-0 flex-1' : 'shrink-0',
+            color[b.s] ?? 'bg-empty',
+            s.cls,
+          )}
+          style={stretch ? { height: s.h } : { width: s.w, height: s.h }}
         />
       ))}
     </div>

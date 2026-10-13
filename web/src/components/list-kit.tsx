@@ -8,10 +8,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Panel } from '@/components/panel'
-import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
 
 export function ListSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useI18n()
@@ -29,29 +28,9 @@ export function ListSearch({ value, onChange }: { value: string; onChange: (v: s
   )
 }
 
-/** Framed panel holding rows separated by hairlines, with an optional mono column header. */
-export function ListCard({
-  children,
-  title,
-  head,
-  className,
-}: {
-  children: React.ReactNode
-  title?: React.ReactNode
-  head?: [React.ReactNode, React.ReactNode?]
-  className?: string
-}) {
-  return (
-    <Panel title={title} className={className} bodyClassName={cn('overflow-hidden rounded-b-2xl', !title && 'rounded-t-2xl')}>
-      {head && (
-        <div className="flex items-center justify-between gap-3 border-b px-5 py-2.5">
-          <span className="text-muted-foreground text-xs">{head[0]}</span>
-          {head[1] && <span className="text-muted-foreground hidden pr-10 text-xs sm:inline">{head[1]}</span>}
-        </div>
-      )}
-      <div className="divide-y">{children}</div>
-    </Panel>
-  )
+/** Card holding rows separated by hairlines. */
+export function ListCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('bg-card shadow-card divide-y overflow-hidden rounded-xl border', className)}>{children}</div>
 }
 
 export function ListRow({
@@ -70,7 +49,7 @@ export function ListRow({
   onClick?: () => void
 }) {
   return (
-    <div className="hover:bg-accent/40 group flex items-center gap-3 px-5 py-3.5 transition-colors duration-150">
+    <div className="hover:bg-accent/40 group flex items-center gap-3 px-4 py-3 transition-colors duration-150">
       {leading}
       <button
         type="button"

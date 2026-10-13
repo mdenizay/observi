@@ -1,6 +1,6 @@
 [package]
 name = "observi"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Lightweight self-hosted uptime monitor"
 license = "MIT"
@@ -10,6 +10,7 @@ repository = "https://github.com/mdenizay/observi"
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 axum = "0.8.9"
+flate2 = "1.1.10"
 futures-util = "0.3.34"
 hex = "0.4.3"
 lettre = { version = "0.11.23", default-features = false, features = ["tokio1-rustls", "smtp-transport", "builder", "hostname", "aws-lc-rs", "rustls-native-certs"] }
@@ -21,6 +22,7 @@ rust-embed = "8.13.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
+tar = "0.4.46"
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

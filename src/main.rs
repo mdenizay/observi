@@ -8,6 +8,7 @@ mod models;
 mod notify;
 mod scheduler;
 mod state;
+mod update;
 mod web;
 
 use std::collections::HashMap;
@@ -32,6 +33,8 @@ Usage:
                                           or generated and printed)
   observi passwd <username>               Reset a password (same password rules)
   observi import-kuma <kuma.db>           Import HTTP/keyword/port monitors from Uptime Kuma
+  observi self-update [--version vX.Y.Z] [--restart]
+                                          Download and install a release (run as root)
   observi health                          Exit 0 if the local server responds (for health checks)
   observi --version
 
@@ -43,6 +46,7 @@ Environment:
   OBSERVI_ADMIN_USER / OBSERVI_ADMIN_PASSWORD
                      first superadmin created on an empty database (password
                      generated and logged once if unset)
+  OBSERVI_UPDATE_CHECK  set to 0 to disable checking GitHub for new releases
   RUST_LOG           log filter (default info)";
 
 fn env(key: &str, default: &str) -> String {
@@ -61,14 +65,18 @@ fn main() -> Result<()> {
     if args.first().map(String::as_str) == Some("health") {
         return health();
     }
+    if args.first().map(String::as_str) == Some("self-update") {
+        return self_update_cli(&args[1..]);
+    }
     if matches!(args.first().map(String::as_str), Some("--version" | "-V" | "version")) {
         println!("observi {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let db = Db::open(&env("OBSERVI_DB", "observi.db")).context("open database")?;
+    let db_path = env("OBSERVI_DB", "observi.db");
+    let db = Db::open(&db_path).context("open database")?;
 
     match args.first().map(String::as_str) {
-        None | Some("serve") => serve(db),
+        None | Some("serve") => serve(db, &db_path),
         Some("user-add") => {
             let (Some(username), Some(name)) = (args.get(1), args.get(2)) else { bail!("{USAGE}") };
             let role = Role::parse(args.get(3).map(String::as_str).unwrap_or("user"));
@@ -122,6 +130,20 @@ fn password_from_env() -> (String, bool) {
     }
 }
 
+fn self_update_cli(args: &[String]) -> Result<()> {
+    let mut opts = update::SelfUpdateArgs { version: None, request: None, restart: false };
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--version" => opts.version = it.next().cloned(),
+            "--request" => opts.request = it.next().map(std::path::PathBuf::from),
+            "--restart" => opts.restart = true,
+            other => bail!("unknown option {other}\n\n{USAGE}"),
+        }
+    }
+    update::self_update(opts)
+}
+
 /// Exit 0 if the local server answers HTTP; used by container health checks.
 /// Plain std networking so it works in a minimal image without curl.
 fn health() -> Result<()> {
@@ -167,7 +189,7 @@ fn bootstrap_admin(db: &Db) -> Result<()> {
     })
 }
 
-fn serve(db: Db) -> Result<()> {
+fn serve(db: Db, db_path: &str) -> Result<()> {
     bootstrap_admin(&db)?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -191,11 +213,13 @@ fn serve(db: Db) -> Result<()> {
                 .build()?,
             clients: Arc::default(),
             shutdown: Arc::new(watch::channel(false).0),
+            updater: Arc::new(update::Updater::new(db_path)),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);
         let writer = tokio::spawn(scheduler::writer(state.clone(), writer_rx, state.shutdown.subscribe()));
         tokio::spawn(scheduler::maintenance(state.clone(), retention));
+        tokio::spawn(update::run(state.clone()));
         scheduler::start_all(&state).await?;
 
         let app = Router::new()
