@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import { Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
+import { KpiTile, TickSparkline } from '@/components/kpi-tile'
+import { Panel } from '@/components/panel'
 import { LatencyChart } from '@/components/latency-chart'
 import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
@@ -40,27 +42,35 @@ const ranges = [
   { hours: 720, key: 'range.30d', short: 'range.30d.short' },
 ] as const
 
-function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title,
+  info,
+  aside,
+  children,
+  bodyClassName = 'p-4',
+}: {
+  title: string
+  info?: string
+  aside?: React.ReactNode
+  children: React.ReactNode
+  bodyClassName?: string
+}) {
   return (
-    <section className="bg-card shadow-card rounded-xl border p-4">
-      <div className="mb-3 flex min-h-7 items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {aside}
-      </div>
+    <Panel title={title} info={info} actions={aside} bodyClassName={bodyClassName}>
       {children}
-    </section>
+    </Panel>
   )
 }
 
-function Kpi({ label, value, loading }: { label: string; value: string; loading?: boolean }) {
+function Legend({ items }: { items: { cls: string; label: string }[] }) {
   return (
-    <div className="bg-card shadow-card min-w-0 rounded-xl border px-3.5 py-3">
-      <div className="text-muted-foreground truncate text-xs">{label}</div>
-      {loading ? (
-        <Skeleton className="mt-1.5 h-6 w-16" />
-      ) : (
-        <div className="num mt-1 truncate text-lg font-semibold">{value}</div>
-      )}
+    <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+      {items.map((it) => (
+        <span key={it.label} className="flex items-center gap-1.5">
+          <span className={cn('size-2 rounded-[2px]', it.cls)} />
+          {it.label}
+        </span>
+      ))}
     </div>
   )
 }
@@ -105,28 +115,40 @@ function UptimeStrip({ monitorId, now }: { monitorId: number; now: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const days = useMemo(() => dailyUptime(q.data ?? [], now), [q.data, Math.floor(now / 3_600_000), lang])
   const tone = (r: number | null) =>
-    r === null ? 'bg-empty' : r >= 99.5 ? 'bg-up' : r >= 95 ? 'bg-pending' : 'bg-down'
+    r === null ? 'bg-cell-empty' : r >= 99.5 ? 'bg-cell-ok' : r >= 95 ? 'bg-pending' : 'bg-down'
   const withData = days.filter((d) => d.ratio !== null)
   const overall = withData.length ? withData.reduce((a, d) => a + (d.ratio ?? 0), 0) / withData.length : null
   return (
-    <Section title={t('detail.uptime30')} aside={<span className="num text-sm font-medium">{formatUptime(overall, 2)}</span>}>
+    <Section
+      title={t('detail.uptime30')}
+      info={t('info.uptime30')}
+      aside={<span className="num pr-1 text-[13px] font-medium">{formatUptime(overall, 2)}</span>}
+    >
       {q.isPending ? (
         <Skeleton className="h-9 w-full" />
       ) : (
         <>
-          <div className="flex h-9 items-stretch gap-[3px]" role="img" aria-label={t('detail.uptime30')}>
+          <div className="grid grid-cols-[repeat(30,minmax(0,1fr))] gap-[3px]" role="img" aria-label={t('detail.uptime30')}>
             {days.map((d) => (
               <span
                 key={d.start}
                 title={`${formatDay(d.start)} · ${d.ratio === null ? t('detail.noData') : formatUptime(d.ratio, 2)}`}
-                className={cn('min-w-0 flex-1 rounded-[3px] transition-opacity hover:opacity-70', tone(d.ratio))}
+                className={cn('aspect-square max-h-4 w-full rounded-[2px] transition-transform hover:scale-125', tone(d.ratio))}
               />
             ))}
           </div>
-          <div className="text-muted-foreground mt-2 flex justify-between text-xs">
+          <div className="text-muted-foreground num mt-2 flex justify-between text-[11px]">
             <span>{formatDay(days[0].start)}</span>
             <span>{t('detail.today')}</span>
           </div>
+          <Legend
+            items={[
+              { cls: 'bg-cell-ok', label: t('legend.healthy') },
+              { cls: 'bg-pending', label: t('legend.degraded') },
+              { cls: 'bg-down', label: t('legend.outage') },
+              { cls: 'bg-cell-empty', label: t('detail.noData') },
+            ]}
+          />
         </>
       )}
     </Section>
@@ -161,52 +183,53 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
   const { t, lang } = useI18n()
   const incidents = useMemo(() => buildIncidents(events ?? []).slice(0, 12), [events])
   return (
-    <Section title={t('detail.incidents')}>
+    <Section title={t('detail.incidents')} info={t('info.incidents')} bodyClassName="">
       {loading ? (
-        <div className="grid gap-2">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
+        <div className="grid gap-2 p-4">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
         </div>
       ) : incidents.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t('detail.noIncidents')}</p>
+        <p className="text-muted-foreground p-4 text-sm">{t('detail.noIncidents')}</p>
       ) : (
-        <ul className="grid gap-2">
+        <div role="table" className="text-sm">
+          <div role="row" className="grid grid-cols-[minmax(0,1.3fr)_5.5rem_6rem] gap-3 border-b px-4 py-2.5">
+            <span role="columnheader" className="label-mono text-[10px]">{t('detail.colStarted')}</span>
+            <span role="columnheader" className="label-mono text-[10px]">{t('detail.colDuration')}</span>
+            <span role="columnheader" className="label-mono text-right text-[10px]">{t('col.status')}</span>
+          </div>
           {incidents.map((inc) => {
             const ongoing = inc.end === null && currentlyDown
             const duration = formatDuration((inc.end ?? now) - inc.start)
             return (
-              <li
+              <div
+                role="row"
                 key={inc.start}
-                className={cn(
-                  'flex items-start gap-3 rounded-lg border px-3 py-2.5',
-                  ongoing ? 'border-down/35 bg-down/[0.06]' : 'bg-muted/30',
-                )}
+                className={cn('border-b px-4 py-3 last:border-b-0', ongoing && 'bg-down/[0.05]')}
               >
-                <span
-                  className={cn('mt-1.5 size-2 shrink-0 rounded-full', ongoing ? 'bg-down live-dot text-down' : 'bg-up')}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="num text-sm font-medium" title={formatDateTime(inc.start)}>
-                      {formatDateTime(inc.start)}
-                    </span>
-                    <Badge variant={ongoing ? 'down' : 'muted'} className="h-5">
+                <div className="grid grid-cols-[minmax(0,1.3fr)_5.5rem_6rem] items-center gap-3">
+                  <span role="cell" className="num truncate text-[13px]" title={formatDateTime(inc.start)}>
+                    {formatDateTime(inc.start)}
+                  </span>
+                  <span role="cell" className="num text-muted-foreground text-[13px]">
+                    {duration}
+                  </span>
+                  <span role="cell" className="flex justify-end">
+                    <Badge variant={ongoing ? 'down' : 'up'}>
+                      {ongoing ? <X className="size-3" strokeWidth={2.5} /> : <Check className="size-3" strokeWidth={2.5} />}
                       {ongoing ? t('detail.ongoing') : t('detail.resolved')}
                     </Badge>
-                  </div>
-                  <div className="text-muted-foreground mt-0.5 text-xs">
-                    {ongoing ? t('detail.downFor', { duration }) : t('detail.lasted', { duration })}
-                    {inc.message && (
-                      <span className="text-foreground/80 mt-0.5 block truncate" title={translateMessage(inc.message, lang)}>
-                        {translateMessage(inc.message, lang)}
-                      </span>
-                    )}
-                  </div>
+                  </span>
                 </div>
-              </li>
+                {inc.message && (
+                  <div className="text-muted-foreground mt-1 truncate text-xs" title={translateMessage(inc.message, lang)}>
+                    {translateMessage(inc.message, lang)}
+                  </div>
+                )}
+              </div>
             )
           })}
-        </ul>
+        </div>
       )}
     </Section>
   )
@@ -347,7 +370,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
       )}
 
       {/* Recent beats */}
-      <section className="bg-card shadow-card rounded-xl border p-4">
+      <Section title={t('detail.recentChecks')} info={t('info.heartbeats')}>
         <HeartbeatBar beats={m.beats} max={50} size="lg" stretch />
         <div className="text-muted-foreground mt-2.5 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs">
           <span>
@@ -370,26 +393,49 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
             </span>
           )}
         </div>
-      </section>
+      </Section>
 
       {/* KPIs */}
-      <div className="grid gap-2">
-        <div className="grid grid-cols-2 gap-2">
-          <Kpi label={t('detail.kpiCurrent')} value={formatLatency(m.latency_ms)} />
-          <Kpi label={t('detail.kpiAvg')} value={formatLatency(stats.data?.avg_latency_24h)} loading={stats.isPending} />
+      <Panel bare>
+        <div className="grid grid-cols-2 gap-1">
+          <KpiTile
+            label={t('detail.kpiCurrent')}
+            value={formatLatency(m.latency_ms)}
+            spark={<TickSparkline values={m.beats.slice(-10).map((b) => b.l ?? 0)} className="hidden sm:flex" />}
+          />
+          <KpiTile
+            label={t('detail.kpiAvg')}
+            value={stats.isPending ? <Skeleton className="h-7 w-16" /> : formatLatency(stats.data?.avg_latency_24h)}
+          />
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <Kpi label={t('detail.kpiUptime', { range: t('range.24h.short') })} value={formatUptime(stats.data?.uptime_24h)} loading={stats.isPending} />
-          <Kpi label={t('detail.kpiUptime', { range: t('range.7d.short') })} value={formatUptime(stats.data?.uptime_7d)} loading={stats.isPending} />
-          <Kpi label={t('detail.kpiUptime', { range: t('range.30d.short') })} value={formatUptime(stats.data?.uptime_30d)} loading={stats.isPending} />
+        <div className="mt-1 grid grid-cols-3 gap-1">
+          {(
+            [
+              ['range.24h.short', stats.data?.uptime_24h],
+              ['range.7d.short', stats.data?.uptime_7d],
+              ['range.30d.short', stats.data?.uptime_30d],
+            ] as const
+          ).map(([k, v]) => (
+            <KpiTile
+              key={k}
+              label={
+                <>
+                  <span className="hidden sm:inline">{t('detail.uptime')} ·</span>
+                  {t(k)}
+                </>
+              }
+              value={stats.isPending ? <Skeleton className="h-7 w-14" /> : <span className="text-xl sm:text-[1.75rem]">{formatUptime(v)}</span>}
+            />
+          ))}
         </div>
-      </div>
+      </Panel>
 
       {/* Chart */}
       <Section
         title={t('detail.responseTime')}
+        info={t('info.chart')}
         aside={
-          <div className="bg-muted flex rounded-lg border p-0.5" role="tablist">
+          <div className="bg-card flex rounded-lg border p-0.5" role="tablist">
             {ranges.map((r) => (
               <button
                 key={r.hours}
@@ -399,7 +445,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
                 onClick={() => setHours(r.hours)}
                 className={cn(
                   'text-muted-foreground hover:text-foreground num rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                  hours === r.hours && 'bg-card text-foreground shadow-xs',
+                  hours === r.hours && 'bg-foreground text-background',
                 )}
               >
                 {t(r.short)}

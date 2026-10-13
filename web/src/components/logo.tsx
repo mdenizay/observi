@@ -53,3 +53,23 @@ export function Logo({ className, onNavigate }: { className?: string; onNavigate
     </Link>
   )
 }
+
+/** Sidebar brand block: a small raised card with mark, name and subtitle. */
+export function BrandCard({ onNavigate }: { onNavigate?: () => void }) {
+  const { name } = useBrand()
+  const { t } = useI18n()
+  return (
+    <Link
+      to="/dashboard"
+      onClick={onNavigate}
+      aria-label={`${name} — ${t('nav.goHome')}`}
+      className="bg-card shadow-card hover:border-border-strong focus-visible:ring-ring/40 flex items-center gap-2.5 rounded-xl border p-2 transition-colors outline-none focus-visible:ring-[3px]"
+    >
+      <BrandMark className="size-8" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm leading-tight font-semibold tracking-tight">{name}</span>
+        <span className="text-muted-foreground block truncate text-[11px] leading-tight">{t('brand.subtitle')}</span>
+      </span>
+    </Link>
+  )
+}

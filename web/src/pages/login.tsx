@@ -6,7 +6,7 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 import { BrandMark } from '@/components/logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Panel } from '@/components/panel'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useMe } from '@/hooks/use-auth'
@@ -50,11 +50,7 @@ export function LoginPage() {
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       <div
         aria-hidden
-        className="graticule pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_60%_55%_at_50%_42%,black,transparent_80%)]"
-      />
-      <div
-        aria-hidden
-        className="bg-primary/20 pointer-events-none absolute top-[18%] left-1/2 size-[34rem] -translate-x-1/2 rounded-full opacity-60 blur-[120px] dark:opacity-40"
+        className="dot-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,black,transparent_85%)]"
       />
       <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
         <LanguageSwitcher />
@@ -68,8 +64,7 @@ export function LoginPage() {
             <p className="text-muted-foreground text-sm">{t('login.subtitle')}</p>
           </div>
         </div>
-        <Card className="shadow-pop rounded-2xl py-6">
-          <CardContent className="px-6">
+        <Panel className="shadow-raised" bodyClassName="p-6">
             <form onSubmit={submit} className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="username">{t('common.username')}</Label>
@@ -104,8 +99,7 @@ export function LoginPage() {
                 {t('login.submit')}
               </Button>
             </form>
-          </CardContent>
-        </Card>
+        </Panel>
       </div>
     </div>
   )

@@ -1,10 +1,15 @@
 import { useId, useMemo, useState } from 'react'
 import { useWidth } from '@/hooks/use-width'
-import { translateMessage } from '@/lib/messages'
-import { beatLabel, formatDateTime, formatDay, formatLatency, formatTime } from '@/lib/format'
+import { useI18n } from '@/i18n'
+import { formatDateTime, formatDay, formatLatency, formatTime } from '@/lib/format'
 import type { Beat } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { useI18n } from '@/i18n'
+
+/**
+ * Dot-matrix column chart: the series is bucketed into columns of small square
+ * cells, filled up to the bucket's average latency. Columns that contain failed
+ * checks are drawn in red; a faint grid of empty cells sits behind everything.
+ */
 
 interface Props {
   beats: Beat[]
@@ -13,7 +18,19 @@ interface Props {
   className?: string
 }
 
-const PAD = { top: 12, right: 12, bottom: 22, left: 44 }
+const CELL = 6
+const GAP = 2
+const PITCH = CELL + GAP
+const PAD = { top: 10, right: 4, bottom: 22, left: 40 }
+
+interface Col {
+  t0: number
+  t1: number
+  avg: number | null
+  down: number
+  pending: number
+  n: number
+}
 
 function niceMax(v: number) {
   if (v <= 0) return 100
@@ -29,98 +46,101 @@ function fmtAxisMs(v: number) {
 }
 
 export function LatencyChart({ beats, hours, height = 220, className }: Props) {
-  const { t, lang } = useI18n()
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
-  const gid = useId().replace(/:/g, '')
+  const { t, lang } = useI18n()
+  const pid = `cells${useId().replace(/:/g, '')}`
 
   const model = useMemo(() => {
     if (width <= 0 || beats.length === 0) return null
-    const w = width
-    const h = height
-    const iw = Math.max(1, w - PAD.left - PAD.right)
-    const ih = Math.max(1, h - PAD.top - PAD.bottom)
+    const cols = Math.max(4, Math.floor((width - PAD.left - PAD.right + GAP) / PITCH))
+    const rows = Math.max(4, Math.floor((height - PAD.top - PAD.bottom + GAP) / PITCH))
+    const plotW = cols * PITCH - GAP
+    const plotH = rows * PITCH - GAP
+    const x0 = PAD.left
+    const y0 = PAD.top
 
-    const t0 = beats[0].t
-    const t1 = Math.max(beats[beats.length - 1].t, t0 + 1)
-    const lat = beats.map((b) => b.l).filter((l): l is number => l !== null && l !== undefined)
-    const yMax = niceMax(lat.length ? Math.max(...lat) * 1.1 : 100)
-
-    const x = (t: number) => PAD.left + ((t - t0) / (t1 - t0)) * iw
-    const y = (l: number) => PAD.top + ih - (l / yMax) * ih
-
-    // Break the line wherever latency is missing (down / paused).
-    const segments: { x: number; y: number }[][] = []
-    let cur: { x: number; y: number }[] = []
+    const tStart = beats[0].t
+    const tEnd = Math.max(beats[beats.length - 1].t, tStart + 1)
+    const span = (tEnd - tStart) / cols
+    const buckets: Col[] = Array.from({ length: cols }, (_, i) => ({
+      t0: tStart + i * span,
+      t1: tStart + (i + 1) * span,
+      avg: null,
+      down: 0,
+      pending: 0,
+      n: 0,
+    }))
+    const sums = new Array(cols).fill(0)
+    const cnts = new Array(cols).fill(0)
     for (const b of beats) {
-      if (b.l === null || b.l === undefined || b.s === 0 || b.s === 3) {
-        if (cur.length) segments.push(cur)
-        cur = []
-        continue
+      const i = Math.min(cols - 1, Math.floor((b.t - tStart) / span))
+      const c = buckets[i]
+      c.n++
+      if (b.s === 0) c.down++
+      else if (b.s === 2) c.pending++
+      if (b.l != null && b.s !== 0) {
+        sums[i] += b.l
+        cnts[i]++
       }
-      cur.push({ x: x(b.t), y: y(b.l) })
     }
-    if (cur.length) segments.push(cur)
+    buckets.forEach((c, i) => (c.avg = cnts[i] ? sums[i] / cnts[i] : null))
+    const maxAvg = Math.max(0, ...buckets.map((c) => c.avg ?? 0))
+    const yMax = niceMax(maxAvg * 1.1 || 100)
 
-    const base = PAD.top + ih
-    const line = segments
-      .map((seg) => seg.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(''))
-      .join('')
-    const area = segments
-      .map((seg) => {
-        if (seg.length === 1) {
-          const p = seg[0]
-          return `M${p.x - 1},${base}L${p.x - 1},${p.y}L${p.x + 1},${p.y}L${p.x + 1},${base}Z`
-        }
-        const d = seg.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('')
-        return `${d}L${seg[seg.length - 1].x.toFixed(1)},${base}L${seg[0].x.toFixed(1)},${base}Z`
-      })
-      .join('')
-
-    // Down markers: contiguous runs of down beats drawn as red bands.
-    const bands: { x: number; w: number }[] = []
-    const step = beats.length > 1 ? iw / (beats.length - 1) : 4
-    for (let i = 0; i < beats.length; i++) {
-      if (beats[i].s !== 0) continue
-      let j = i
-      while (j + 1 < beats.length && beats[j + 1].s === 0) j++
-      const xa = x(beats[i].t)
-      const xb = x(beats[j].t)
-      bands.push({ x: xa - step / 2, w: Math.max(2, xb - xa + step) })
-      i = j
-    }
-
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({ v: yMax * f, y: y(yMax * f) }))
-    const nX = Math.max(2, Math.min(6, Math.floor(iw / 90)))
-    const span = t1 - t0
-    const showDay = hours > 24 || span > 24 * 3600_000
+    const filled = buckets.map((c) => (c.down ? rows : c.avg === null ? 0 : Math.max(1, Math.round((c.avg / yMax) * rows))))
+    const yTicks = [0, 0.5, 1].map((f) => ({ v: yMax * f, y: y0 + plotH - f * plotH }))
+    const nX = Math.max(2, Math.min(5, Math.floor(plotW / 110)))
+    const showDay = hours > 24
     const xTicks = Array.from({ length: nX }, (_, i) => {
-      const t = t0 + (span * i) / (nX - 1)
-      return { x: x(t), label: showDay ? `${formatDay(t)}${hours <= 168 ? ` ${formatTime(t)}` : ''}` : formatTime(t) }
+      const col = Math.round(((cols - 1) * i) / (nX - 1))
+      const tt = buckets[col].t0
+      return {
+        x: x0 + col * PITCH + CELL / 2,
+        label: showDay ? `${formatDay(tt)}${hours <= 168 ? ` ${formatTime(tt)}` : ''}` : formatTime(tt),
+      }
     })
-
-    return { w, h, iw, ih, x, y, line, area, bands, yTicks, xTicks, base }
+    return { cols, rows, plotW, plotH, x0, y0, buckets, filled, yTicks, xTicks, yMax }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [beats, width, height, hours, lang])
+
+  // Static cell layer (memoised so hover only re-renders the overlay).
+  const cells = useMemo(() => {
+    if (!model) return null
+    const out: React.ReactNode[] = []
+    model.buckets.forEach((c, i) => {
+      const h = model.filled[i]
+      const x = model.x0 + i * PITCH
+      for (let r = 0; r < h; r++) {
+        const y = model.y0 + model.plotH - (r + 1) * PITCH + GAP
+        const top = r === h - 1
+        out.push(
+          <rect
+            key={`${i}-${r}`}
+            x={x}
+            y={y}
+            width={CELL}
+            height={CELL}
+            rx={1.5}
+            fill={c.down ? 'var(--down)' : top ? (c.pending ? 'var(--pending)' : 'var(--cell-ink)') : 'var(--cell-ok)'}
+            fillOpacity={c.down ? (top ? 0.95 : 0.4) : 1}
+          />,
+        )
+      }
+    })
+    return out
+  }, [model])
 
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!model) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const px = e.clientX - rect.left
-    // binary search nearest by x
-    let lo = 0
-    let hi = beats.length - 1
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1
-      if (model.x(beats[mid].t) < px) lo = mid
-      else hi = mid
-    }
-    const best = Math.abs(model.x(beats[lo].t) - px) <= Math.abs(model.x(beats[hi].t) - px) ? lo : hi
-    setHover(best)
+    const i = Math.floor((e.clientX - rect.left - model.x0) / PITCH)
+    setHover(i >= 0 && i < model.cols && model.buckets[i].n > 0 ? i : null)
   }
 
-  const hb = hover !== null ? beats[hover] : null
-  const hx = hb && model ? model.x(hb.t) : 0
-  const hy = hb && model && hb.l !== null && hb.l !== undefined ? model.y(hb.l) : null
+  const hb = hover !== null && model ? model.buckets[hover] : null
+  const hx = hb && model ? model.x0 + hover! * PITCH + CELL / 2 : 0
+  const hy = hb && model ? model.y0 + model.plotH - model.filled[hover!] * PITCH + GAP - 1 : 0
 
   return (
     <div ref={ref} className={cn('relative w-full select-none', className)} style={{ height }}>
@@ -131,112 +151,88 @@ export function LatencyChart({ beats, hours, height = 220, className }: Props) {
       )}
       {model && (
         <svg
-          width={model.w}
-          height={model.h}
+          width={width}
+          height={height}
           className="block touch-none"
           onPointerMove={onMove}
           onPointerDown={onMove}
           onPointerLeave={() => setHover(null)}
         >
           <defs>
-            <linearGradient id={`g${gid}`} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart)" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="var(--chart)" stopOpacity="0.02" />
-            </linearGradient>
+            <pattern id={pid} x={model.x0} y={model.y0} width={PITCH} height={PITCH} patternUnits="userSpaceOnUse">
+              <rect width={CELL} height={CELL} rx={1.5} fill="var(--cell-empty)" />
+            </pattern>
           </defs>
+          <rect x={model.x0} y={model.y0} width={model.plotW} height={model.plotH} fill={`url(#${pid})`} />
 
-          {model.yTicks.map((t) => (
-            <g key={t.v}>
+          {model.yTicks.map((tk) => (
+            <g key={tk.v}>
               <line
-                x1={PAD.left}
-                x2={model.w - PAD.right}
-                y1={t.y}
-                y2={t.y}
-                className="stroke-border"
-                strokeDasharray={t.v === 0 ? undefined : '3 3'}
+                x1={model.x0}
+                x2={model.x0 + model.plotW}
+                y1={tk.y + 0.5}
+                y2={tk.y + 0.5}
+                stroke="var(--border-strong)"
+                strokeDasharray="1 4"
+                strokeLinecap="round"
               />
+              <circle cx={model.x0 - 6} cy={tk.y} r={1.25} fill="var(--muted-foreground)" />
               <text
-                x={PAD.left - 8}
-                y={t.y}
+                x={model.x0 - 11}
+                y={tk.y}
                 dy="0.32em"
                 textAnchor="end"
-                className="fill-muted-foreground text-[10px] tabular-nums"
+                className="fill-muted-foreground font-mono text-[10px]"
               >
-                {fmtAxisMs(t.v)}
+                {fmtAxisMs(tk.v)}
               </text>
             </g>
           ))}
-          <text x={4} y={PAD.top - 2} className="fill-muted-foreground text-[10px]">
-            ms
-          </text>
 
-          {model.xTicks.map((t, i) => (
-            <text
-              key={i}
-              x={t.x}
-              y={model.h - 6}
-              textAnchor={i === 0 ? 'start' : i === model.xTicks.length - 1 ? 'end' : 'middle'}
-              className="fill-muted-foreground text-[10px] tabular-nums"
-            >
-              {t.label}
-            </text>
+          {cells}
+
+          {model.xTicks.map((tk, i) => (
+            <g key={i}>
+              <circle cx={tk.x} cy={model.y0 + model.plotH + 6} r={1.25} fill="var(--muted-foreground)" />
+              <text
+                x={tk.x}
+                y={height - 3}
+                textAnchor={i === 0 ? 'start' : i === model.xTicks.length - 1 ? 'end' : 'middle'}
+                className="fill-muted-foreground font-mono text-[10px]"
+              >
+                {tk.label}
+              </text>
+            </g>
           ))}
-
-          {model.bands.map((b, i) => (
-            <rect
-              key={i}
-              x={b.x}
-              y={PAD.top}
-              width={b.w}
-              height={model.ih}
-              className="fill-down"
-              fillOpacity={0.15}
-            />
-          ))}
-
-          <path d={model.area} fill={`url(#g${gid})`} />
-          <path
-            d={model.line}
-            fill="none"
-            stroke="var(--chart)"
-            strokeWidth={1.5}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
 
           {hb && (
             <g pointerEvents="none">
-              <line x1={hx} x2={hx} y1={PAD.top} y2={model.base} className="stroke-muted-foreground/60" />
-              {hy !== null && (
-                <circle cx={hx} cy={hy} r={3.5} fill="var(--chart)" className="stroke-background" strokeWidth={2} />
-              )}
+              <line
+                x1={hx}
+                x2={hx}
+                y1={model.y0}
+                y2={model.y0 + model.plotH}
+                stroke="var(--foreground)"
+                strokeOpacity={0.55}
+                strokeDasharray="1 3"
+                strokeLinecap="round"
+              />
+              <circle cx={hx} cy={Math.max(model.y0 + 3, hy)} r={3.5} fill="var(--foreground)" stroke="var(--card)" strokeWidth={2} />
             </g>
           )}
         </svg>
       )}
       {hb && model && (
         <div
-          className="bg-popover text-popover-foreground pointer-events-none absolute top-1 z-10 rounded-md border px-2.5 py-1.5 text-xs shadow-md"
-          style={
-            hx > model.w / 2
-              ? { right: model.w - hx + 10 }
-              : { left: hx + 10 }
-          }
+          className="bg-popover text-popover-foreground shadow-pop pointer-events-none absolute top-0 z-10 rounded-lg border px-3 py-2 text-xs"
+          style={hx > width / 2 ? { right: width - hx + 12 } : { left: hx + 12 }}
         >
-          <div className="text-muted-foreground">{formatDateTime(hb.t)}</div>
-          <div className="mt-0.5 flex items-center gap-2 font-medium">
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                hb.s === 1 ? 'bg-up' : hb.s === 0 ? 'bg-down' : hb.s === 2 ? 'bg-pending' : 'bg-paused',
-              )}
-            />
-            {beatLabel(hb.s)}
-            <span className="tabular-nums">{formatLatency(hb.l)}</span>
+          <div className="text-muted-foreground num">{formatDateTime(hb.t0)}</div>
+          <div className="mt-1 flex items-center gap-2 font-medium">
+            <span className={cn('size-2 rounded-[2px]', hb.down ? 'bg-down' : hb.pending ? 'bg-pending' : 'bg-cell-ink')} />
+            <span className="num">{hb.avg === null ? '—' : formatLatency(hb.avg)}</span>
           </div>
-          {hb.m && (
-            <div className="text-muted-foreground mt-0.5 max-w-56 truncate">{translateMessage(hb.m, lang)}</div>
-          )}
+          {hb.down > 0 && <div className="text-down mt-0.5">{t('status.down')} × {hb.down}</div>}
         </div>
       )}
     </div>

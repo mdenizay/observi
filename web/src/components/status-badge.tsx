@@ -1,3 +1,4 @@
+import { Check, CircleDot, HelpCircle, Pause, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { statusLabel, uptimeTone, formatUptime } from '@/lib/format'
 import type { MonitorStatus } from '@/lib/types'
@@ -11,6 +12,8 @@ const variant: Record<MonitorStatus, 'up' | 'down' | 'pending' | 'paused' | 'mut
   unknown: 'muted',
 }
 
+const icon = { up: Check, down: X, pending: CircleDot, paused: Pause, unknown: HelpCircle } as const
+
 export const statusDot: Record<MonitorStatus, string> = {
   up: 'bg-up',
   down: 'bg-down',
@@ -20,9 +23,10 @@ export const statusDot: Record<MonitorStatus, string> = {
 }
 
 export function StatusBadge({ status, className }: { status: MonitorStatus; className?: string }) {
+  const Icon = icon[status]
   return (
     <Badge variant={variant[status]} className={className}>
-      <span className={cn('size-1.5 rounded-full', statusDot[status], status === 'down' && 'animate-pulse')} />
+      <Icon className="size-3" strokeWidth={2.5} />
       {statusLabel(status)}
     </Badge>
   )
@@ -30,7 +34,7 @@ export function StatusBadge({ status, className }: { status: MonitorStatus; clas
 
 export function UptimeBadge({ value, className }: { value: number | null | undefined; className?: string }) {
   return (
-    <Badge variant={uptimeTone(value)} className={cn('min-w-14 justify-center', className)}>
+    <Badge variant={uptimeTone(value)} className={cn('num min-w-14 justify-center', className)}>
       {formatUptime(value, value !== null && value !== undefined && value < 100 ? 1 : 0)}
     </Badge>
   )

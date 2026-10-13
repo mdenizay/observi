@@ -59,7 +59,7 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
           <button
             type="button"
             aria-label={t('usermenu.open')}
-            className="hover:bg-accent data-[state=open]:bg-accent focus-visible:ring-ring/50 flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
+            className="bg-card shadow-card hover:border-border-strong data-[state=open]:border-border-strong focus-visible:ring-ring/40 flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition-colors outline-none focus-visible:ring-[3px]"
           >
             <Avatar name={display} />
             <div className="min-w-0 flex-1">

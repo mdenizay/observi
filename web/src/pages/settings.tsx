@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field } from '@/components/field'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Panel } from '@/components/panel'
 import { Input } from '@/components/ui/input'
 import { LogoMark } from '@/components/logo'
 import { useIsAdmin } from '@/hooks/use-auth'
@@ -49,13 +49,8 @@ function PasswordCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t('settings.pw.title')}</CardTitle>
-        <CardDescription>{t('settings.pw.desc')}</CardDescription>
-      </CardHeader>
+    <Panel title={t('settings.pw.title')} info={t('settings.pw.desc')} bodyClassName="p-4 grid gap-4">
       <form onSubmit={submit} noValidate className="contents">
-        <CardContent className="grid gap-4">
           <Field label={t('settings.pw.current')} htmlFor="pw-current" error={errors.current}>
             <Input
               id="pw-current"
@@ -88,15 +83,15 @@ function PasswordCard() {
               />
             </Field>
           </div>
-        </CardContent>
-        <CardFooter className="justify-end">
+        <div className="divider-dots" />
+        <div className="flex justify-end">
           <Button type="submit" disabled={saving}>
             {saving && <Loader2 className="animate-spin" />}
             {t('settings.pw.submit')}
           </Button>
-        </CardFooter>
+        </div>
       </form>
-    </Card>
+    </Panel>
   )
 }
 
@@ -166,12 +161,7 @@ function BrandingCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t('brand.title')}</CardTitle>
-        <CardDescription>{t('brand.desc')}</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-5">
+    <Panel title={t('brand.title')} info={t('brand.desc')} bodyClassName="p-4 grid gap-5">
         <form onSubmit={saveName} noValidate className="flex items-start gap-2">
           <Field label={t('brand.name')} htmlFor="brand-name" error={nameError} className="flex-1">
             <Input
@@ -206,7 +196,7 @@ function BrandingCard() {
             }}
             className={cn(
               'flex flex-col items-center gap-3 rounded-lg border border-dashed p-4 text-center transition-colors sm:flex-row sm:text-left',
-              dragging && 'border-primary bg-accent/50',
+              dragging && 'border-foreground/60 bg-accent/50',
             )}
           >
             {brand.logo ? (
@@ -241,20 +231,14 @@ function BrandingCard() {
             />
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </Panel>
   )
 }
 
 function LanguageCard() {
   const { t, lang, setLang } = useI18n()
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{t('lang.label')}</CardTitle>
-        <CardDescription>{t('lang.desc')}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Panel title={t('lang.label')} info={t('lang.desc')} bodyClassName="p-4">
         <div className="bg-muted inline-flex rounded-md p-0.5" role="radiogroup" aria-label={t('lang.label')}>
           {LANGS.map((l) => (
             <button
@@ -272,8 +256,7 @@ function LanguageCard() {
             </button>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      </Panel>
   )
 }
 

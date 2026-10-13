@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field, SwitchField } from '@/components/field'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Panel } from '@/components/panel'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
@@ -277,22 +277,15 @@ export function MonitorFormPage() {
       />
 
       {!loaded ? (
-        <Card className="lg:max-w-[50%]">
-          <CardContent className="grid gap-4">
+        <Panel className="lg:max-w-[50%]" bodyClassName="grid gap-4 p-4">
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-2/3" />
-          </CardContent>
-        </Card>
+          </Panel>
       ) : (
         <form onSubmit={submit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2" noValidate>
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{t('mf.general')}</CardTitle>
-                <CardDescription>{t('mf.generalDesc')}</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Panel title={t('mf.general')} info={t('mf.generalDesc')} bodyClassName="p-4 grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-1.5 sm:col-span-2">
                   <span className="text-sm leading-none font-medium" id="type-label">
                     {t('mf.type')}
@@ -309,11 +302,11 @@ export function MonitorFormPage() {
                           onClick={() => set('type', o.value)}
                           className={cn(
                             'hover:border-border-strong focus-visible:ring-ring/50 flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
-                            on && 'border-primary/60 bg-primary/[0.06] ring-primary/25 ring-2',
+                            on && 'border-foreground/70 ring-foreground/70 bg-foreground/[0.03] ring-1',
                           )}
                         >
                           <span className="flex items-center gap-2 text-sm font-medium">
-                            <o.icon className={cn('size-4', on ? 'text-primary' : 'text-muted-foreground')} />
+                            <o.icon className={cn('size-4', on ? 'text-foreground' : 'text-muted-foreground')} />
                             {t(o.label)}
                           </span>
                           <span className="text-muted-foreground text-xs leading-snug">{t(o.desc)}</span>
@@ -438,19 +431,18 @@ export function MonitorFormPage() {
                     placeholder={t('common.optional')}
                   />
                 </Field>
-              </CardContent>
-            </Card>
+              </Panel>
 
             {isHttp && (
-              <Card className="py-0">
+              <Panel bare>
                 <Collapsible open={advanced} onOpenChange={setAdvanced}>
-                  <CollapsibleTrigger className="flex w-full items-center gap-2 px-4 py-4 text-left">
-                    <ChevronRight className={cn('size-4 transition-transform', advanced && 'rotate-90')} />
-                    <span className="font-semibold">{t('mf.advanced')}</span>
-                    <span className="text-muted-foreground truncate text-sm">{t('mf.advancedDesc')}</span>
+                  <CollapsibleTrigger className="label-mono hover:text-foreground flex min-h-9 w-full items-center gap-1.5 px-2.5 py-1 text-left">
+                    <ChevronRight className={cn('size-3.5 transition-transform', advanced && 'rotate-90')} />
+                    <span>{t('mf.advanced')}</span>
+                    <span className="truncate tracking-normal normal-case opacity-80">— {t('mf.advancedDesc')}</span>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2">
+                    <div className="bg-card shadow-card grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
                       <Field label={t('mf.headers')} htmlFor="headers" error={errors.headers}>
                         <Textarea
                           id="headers"
@@ -475,16 +467,11 @@ export function MonitorFormPage() {
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
-              </Card>
+              </Panel>
             )}
           </div>
           <div className="grid min-w-0 grid-cols-1 content-start gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{t('mf.checkSettings')}</CardTitle>
-                <CardDescription>{t('mf.checkSettingsDesc')}</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Panel title={t('mf.checkSettings')} info={t('mf.checkSettingsDesc')} bodyClassName="p-4 grid gap-4 sm:grid-cols-2">
                 <Field label={t('mf.interval')} htmlFor="interval" error={errors.interval} hint={t('mf.intervalHint')}>
                   <Input
                     id="interval"
@@ -582,15 +569,9 @@ export function MonitorFormPage() {
                     onCheckedChange={(v) => set('upside_down', v)}
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </Panel>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{t('mf.notifications')}</CardTitle>
-                <CardDescription>{t('mf.notificationsDesc')}</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <Panel title={t('mf.notifications')} info={t('mf.notificationsDesc')} bodyClassName="p-4">
                 {notifications.isPending ? (
                   <Skeleton className="h-9 w-full" />
                 ) : !notifications.data?.length ? (
@@ -631,8 +612,7 @@ export function MonitorFormPage() {
                     })}
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </Panel>
           </div>
 
           <div className="bg-background/85 sticky bottom-0 z-10 -mx-3 flex justify-end gap-2 border-t px-3 py-3 backdrop-blur-md sm:-mx-4 sm:px-4 lg:col-span-2 lg:-mx-6 lg:px-6">

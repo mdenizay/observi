@@ -417,7 +417,7 @@ export function NotificationsPage() {
           <EmptyState kind="search" title={t('common.noResults')} />
         </ListCard>
       ) : (
-        <ListCard>
+        <ListCard title={t('notif.count', { count: shown.length })} head={[t('common.name')]}>
           {shown.map((n) => {
             const Icon = kindIcon[n.kind] ?? Send
             const sum = summary(n, t)

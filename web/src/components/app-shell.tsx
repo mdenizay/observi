@@ -2,7 +2,7 @@ import { Fragment, Suspense, useCallback, useState } from 'react'
 import { matchPath, NavLink, Outlet, useLocation } from 'react-router'
 import { Bell, ChevronRight, Folder, House, Loader2, Menu, Plus, Search, Settings, Users, type LucideIcon } from 'lucide-react'
 import { CommandPalette } from '@/components/command-palette'
-import { Logo } from '@/components/logo'
+import { BrandCard, Logo } from '@/components/logo'
 import { UserMenu } from '@/components/user-menu'
 import { Button } from '@/components/ui/button'
 import { isMac, Kbd } from '@/components/ui/kbd'
@@ -39,8 +39,8 @@ function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
-          'text-muted-foreground hover:text-foreground hover:bg-sidebar-active/60 focus-visible:ring-ring/50 flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150 outline-none focus-visible:ring-[3px]',
-          isActive && 'bg-sidebar-active text-foreground hover:bg-sidebar-active',
+          'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] focus-visible:ring-ring/40 flex h-8 items-center gap-2.5 rounded-lg border border-transparent px-2.5 text-[13px] font-medium transition-colors duration-150 outline-none focus-visible:ring-[3px]',
+          isActive && 'bg-sidebar-active text-foreground border-border shadow-card hover:bg-sidebar-active',
         )
       }
     >
@@ -59,7 +59,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const isAdmin = useIsAdmin()
   const section = (label: string, items: NavItem[]) => (
     <div className="flex flex-col gap-0.5">
-      <div className="text-muted-foreground/80 px-2.5 pt-4 pb-1.5 text-xs font-medium">{label}</div>
+      <div className="label-mono px-2.5 pt-5 pb-1.5 text-[10px]">{label}</div>
       {items.map((it) => (
         <NavItemLink key={it.to} item={it} onNavigate={onNavigate} />
       ))}
@@ -67,8 +67,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   )
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center px-4">
-        <Logo onNavigate={onNavigate} />
+      <div className="shrink-0 px-2.5 pt-2.5">
+        <BrandCard onNavigate={onNavigate} />
       </div>
       <nav className="scrollbar-thin flex flex-1 flex-col overflow-y-auto px-2.5 pb-2">
         {section(t('nav.section.monitoring'), isAdmin ? monitoring : monitoring.slice(0, 1))}
@@ -77,7 +77,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavItemLink item={{ to: '/settings', labelKey: 'nav.settings', icon: Settings }} onNavigate={onNavigate} />
         </div>
       </nav>
-      <div className="border-t p-2">
+      <div className="p-2.5 pt-0">
         <UserMenu onNavigate={onNavigate} />
       </div>
     </div>
@@ -107,12 +107,12 @@ function LiveIndicator({ compact = false }: { compact?: boolean }) {
       role="status"
       title={live ? t('live.liveHint') : t('live.offHint')}
       className={cn(
-        'flex h-7 items-center gap-2 rounded-full border px-2.5 text-xs font-medium',
-        live ? 'text-up border-up/25 bg-up/8' : 'text-pending border-pending/30 bg-pending/8',
+        'bg-card flex h-8 items-center gap-2 rounded-lg border px-2.5 font-mono text-[11px] tracking-[0.06em] uppercase shadow-xs',
+        live ? 'text-foreground' : 'text-pending border-pending/40',
         compact && 'px-2',
       )}
     >
-      <span className={cn('size-1.5 rounded-full bg-current', live && 'live-dot')} />
+      <span className={cn('size-1.5 rounded-full', live ? 'bg-up live-dot text-up' : 'bg-pending')} />
       <span className={cn(compact && 'sr-only')}>{label}</span>
     </div>
   )
@@ -161,22 +161,21 @@ export function AppShell() {
           ))}
         </nav>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setPalette(true)}
+          className="bg-card text-muted-foreground hover:border-border-strong focus-visible:ring-ring/40 hidden h-8 w-56 items-center gap-2 rounded-lg border pr-1.5 pl-2.5 text-sm shadow-xs transition-colors outline-none focus-visible:ring-[3px] sm:flex xl:w-72"
+        >
+          <Search className="size-3.5 shrink-0" />
+          <span className="flex-1 truncate text-left">{t('cmd.placeholder')}</span>
+          <Kbd>{isMac ? '⌘' : 'Ctrl'} K</Kbd>
+        </button>
         <div className="hidden sm:block">
           <LiveIndicator />
         </div>
         <div className="sm:hidden">
           <LiveIndicator compact />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPalette(true)}
-          className="text-muted-foreground hidden h-8 gap-2 pr-1.5 pl-2.5 font-normal sm:inline-flex"
-        >
-          <Search className="size-3.5" />
-          <span className="pr-3">{t('search.button')}</span>
-          <Kbd>{isMac ? '⌘' : 'Ctrl'} K</Kbd>
-        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
