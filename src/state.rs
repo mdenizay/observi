@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
 use serde::Serialize;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::auth::LoginThrottle;
 use crate::db::Db;
@@ -95,6 +95,8 @@ pub struct AppState {
     /// Client for outgoing notifications (pooled).
     pub http: reqwest::Client,
     pub clients: Arc<crate::check::Clients>,
+    /// Flips to true on shutdown so long-lived SSE streams end and the server can drain.
+    pub shutdown: Arc<watch::Sender<bool>>,
 }
 
 impl AppState {

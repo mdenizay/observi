@@ -16,7 +16,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use axum::Router;
 use axum::http::{HeaderValue, header};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::db::Db;
 use crate::models::{MonitorConfig, MonitorType, Role};
@@ -47,7 +47,7 @@ fn env(key: &str, default: &str) -> String {
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,rustls_platform_verifier=off".into()),
         )
         .init();
 
@@ -136,10 +136,11 @@ fn serve(db: Db) -> Result<()> {
                 .user_agent(concat!("Observi/", env!("CARGO_PKG_VERSION")))
                 .build()?,
             clients: Arc::default(),
+            shutdown: Arc::new(watch::channel(false).0),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);
-        let writer = tokio::spawn(scheduler::writer(state.clone(), writer_rx));
+        let writer = tokio::spawn(scheduler::writer(state.clone(), writer_rx, state.shutdown.subscribe()));
         tokio::spawn(scheduler::maintenance(state.clone(), retention));
         scheduler::start_all(&state).await?;
 
@@ -152,7 +153,13 @@ fn serve(db: Db) -> Result<()> {
         let addr = env("OBSERVI_LISTEN", "127.0.0.1:3001");
         let listener = tokio::net::TcpListener::bind(&addr).await.with_context(|| format!("bind {addr}"))?;
         tracing::info!("Observi listening on http://{addr}");
-        axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
+        let sd = state.shutdown.clone();
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                shutdown().await;
+                let _ = sd.send(true);
+            })
+            .await?;
 
         // Flush pending heartbeats before exit.
         drop(state);

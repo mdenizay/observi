@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use rusqlite::Connection;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::AbortHandle;
 
 use crate::db::now_ms;
@@ -171,41 +171,52 @@ pub async fn start_all(state: &AppState) -> Result<()> {
 }
 
 /// Batches heartbeats into one transaction every couple of seconds to keep
-/// SD-card writes low.
-pub async fn writer(state: AppState, mut rx: mpsc::Receiver<BeatRecord>) {
+/// SD-card writes low. On shutdown it flushes what is queued and returns.
+pub async fn writer(state: AppState, mut rx: mpsc::Receiver<BeatRecord>, mut shutdown: watch::Receiver<bool>) {
     let mut buf: Vec<BeatRecord> = Vec::with_capacity(256);
     loop {
-        let n = rx.recv_many(&mut buf, 512).await;
-        if n == 0 {
-            break;
+        let mut stop = tokio::select! {
+            n = rx.recv_many(&mut buf, 512) => n == 0,
+            _ = shutdown.changed() => true,
+        };
+        if !stop {
+            // Give other beats a moment to arrive so they land in the same transaction.
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                _ = shutdown.changed() => stop = true,
+            }
         }
-        // Give other beats a moment to arrive so they land in the same transaction.
-        tokio::time::sleep(Duration::from_secs(2)).await;
         while let Ok(r) = rx.try_recv() {
             buf.push(r);
         }
-        let batch = std::mem::take(&mut buf);
-        let res = state
-            .db
-            .call(move |c| {
-                let tx = c.transaction()?;
-                {
-                    let mut st = tx.prepare_cached(
-                        "INSERT OR REPLACE INTO heartbeats (monitor_id, t, s, l, m, important) VALUES (?,?,?,?,?,?)",
-                    )?;
-                    for r in &batch {
-                        st.execute(rusqlite::params![
-                            r.monitor_id, r.beat.t, r.beat.s, r.beat.l, r.beat.m, r.important
-                        ])?;
-                    }
-                }
-                tx.commit()?;
-                Ok(())
-            })
-            .await;
-        if let Err(e) = res {
-            tracing::error!("heartbeat write failed: {e:#}");
+        if !buf.is_empty() {
+            flush(&state, std::mem::take(&mut buf)).await;
         }
+        if stop {
+            break;
+        }
+    }
+}
+
+async fn flush(state: &AppState, batch: Vec<BeatRecord>) {
+    let res = state
+        .db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            {
+                let mut st = tx.prepare_cached(
+                    "INSERT OR REPLACE INTO heartbeats (monitor_id, t, s, l, m, important) VALUES (?,?,?,?,?,?)",
+                )?;
+                for r in &batch {
+                    st.execute(rusqlite::params![r.monitor_id, r.beat.t, r.beat.s, r.beat.l, r.beat.m, r.important])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await;
+    if let Err(e) = res {
+        tracing::error!("heartbeat write failed: {e:#}");
     }
 }
 

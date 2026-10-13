@@ -60,7 +60,7 @@ jobs:
         run: |
           tar -xzf "observi-linux-${{ matrix.arch }}.tar.gz" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/observi" --version
-          file "$RUNNER_TEMP/observi" | grep -q "statically linked"
+          file "$RUNNER_TEMP/observi" | grep -qE "statically linked|static-pie linked"
 
       - uses: actions/upload-artifact@v4
         with:

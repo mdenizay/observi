@@ -583,9 +583,14 @@ async fn events(
 ) -> ApiResult<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>> {
     let visible = visible_ids(&st, &user).await?;
     let rx = st.events.subscribe();
-    let stream = futures_util::stream::unfold((rx, visible, st, user), |(mut rx, mut visible, st, user)| async move {
+    let sd = st.shutdown.subscribe();
+    let stream = futures_util::stream::unfold((rx, visible, st, user, sd), |(mut rx, mut visible, st, user, mut sd)| async move {
         loop {
-            match rx.recv().await {
+            let msg = tokio::select! {
+                m = rx.recv() => m,
+                _ = sd.changed() => return None,
+            };
+            match msg {
                 Ok(Event::Beat(b)) => {
                     if visible.as_ref().is_some_and(|v| !v.contains(&b.monitor_id)) {
                         continue;
@@ -593,7 +598,7 @@ async fn events(
                     let ev = SseEvent::default()
                         .event("beat")
                         .data(serde_json::to_string(&b).unwrap_or_default());
-                    return Some((Ok(ev), (rx, visible, st, user)));
+                    return Some((Ok(ev), (rx, visible, st, user, sd)));
                 }
                 Ok(Event::MonitorsChanged) => {
                     // Permissions may have changed too; reload the visible set.
@@ -601,11 +606,11 @@ async fn events(
                         visible = v;
                     }
                     let ev = SseEvent::default().event("monitors").data("{}");
-                    return Some((Ok(ev), (rx, visible, st, user)));
+                    return Some((Ok(ev), (rx, visible, st, user, sd)));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     let ev = SseEvent::default().event("monitors").data("{}");
-                    return Some((Ok(ev), (rx, visible, st, user)));
+                    return Some((Ok(ev), (rx, visible, st, user, sd)));
                 }
                 Err(_) => return None,
             }
