@@ -1,0 +1,85 @@
+name: Release
+
+# Push a tag like v0.1.0 to build static Linux binaries and publish a release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build web UI
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          out="observi-linux-${{ matrix.arch }}.tar.gz"
+          tar -czf "$out" -C "target/${{ matrix.target }}/release" observi
+          sha256sum "$out" > "$out.sha256"
+
+      - name: Smoke test
+        run: |
+          tar -xzf "observi-linux-${{ matrix.arch }}.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/observi" --version
+          file "$RUNNER_TEMP/observi" | grep -q "statically linked"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: observi-linux-${{ matrix.arch }}
+          path: observi-linux-${{ matrix.arch }}.tar.gz*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

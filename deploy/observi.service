@@ -1,0 +1,33 @@
+[Unit]
+Description=Observi uptime monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=observi
+Group=observi
+Environment=OBSERVI_DB=/var/lib/observi/observi.db
+Environment=OBSERVI_LISTEN=127.0.0.1:3001
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/observi serve
+Restart=always
+RestartSec=3
+StateDirectory=observi
+WorkingDirectory=/var/lib/observi
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

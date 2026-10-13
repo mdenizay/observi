@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build web UI
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Smoke test
+        run: |
+          export OBSERVI_DB="$RUNNER_TEMP/smoke.db" OBSERVI_LISTEN=127.0.0.1:3999
+          OBSERVI_PASSWORD=smoke-test-pass ./target/release/observi user-add admin Admin superadmin
+          ./target/release/observi serve &
+          pid=$!
+          for _ in $(seq 1 20); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3999/api/auth/me)" = 401 ] && break
+            sleep 1
+          done
+          curl -sf -c "$RUNNER_TEMP/c" -H 'content-type: application/json' \
+            -d '{"username":"admin","password":"smoke-test-pass"}' http://127.0.0.1:3999/api/auth/login
+          curl -sf http://127.0.0.1:3999/login | grep -q '<div id="root">'
+          kill $pid

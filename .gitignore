@@ -1,0 +1,11 @@
+/target
+*.db
+*.db-shm
+*.db-wal
+web/node_modules
+web/dist
+# local-only: credentials and one-off data scripts
+.local/
+*password*.txt
+.env
+.DS_Store
