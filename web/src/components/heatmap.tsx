@@ -12,7 +12,6 @@ import { formatUptime } from '@/lib/format'
 import type { HeatmapItem, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const COLLAPSED_ROWS = 12
 const RANGES: HeatRange[] = ['24h', '7d', '30d']
 
 /** Cell colours: a mostly-green board stays calm (muted green), trouble stands out. */
@@ -30,6 +29,8 @@ const legend = [
   ['w', 'heat.s.w'],
   ['d', 'heat.s.d'],
   ['m', 'heat.s.m'],
+  ['p', 'heat.s.p'],
+  ['x', 'heat.s.x'],
   ['-', 'heat.s.none'],
 ] as const
 
@@ -163,7 +164,24 @@ export function Heatmap({
       return a.name.localeCompare(b.name, lang)
     })
   }, [data, lang])
-  const shown = expanded ? sorted : sorted.slice(0, COLLAPSED_ROWS)
+
+  /** Current state per monitor: live state when known, else the last bucket that has data. */
+  const nowState = useMemo(() => {
+    const live = new Map((monitors ?? []).map((m) => [m.id, m]))
+    const out = new Map<number, string>()
+    for (const it of sorted) {
+      const m = live.get(it.id)
+      if (m) {
+        out.set(it.id, !m.active ? 'x' : m.status === 'up' ? 'u' : m.status === 'down' ? 'd' : m.status === 'maintenance' ? 'm' : m.status === 'paused' ? 'x' : 'p')
+        continue
+      }
+      const last = [...it.cells].reverse().find((c) => c !== '-')
+      out.set(it.id, last === 'w' ? 'p' : (last ?? '-'))
+    }
+    return out
+  }, [sorted, monitors])
+  const problems = useMemo(() => sorted.filter((i) => hasTrouble(i) || nowState.get(i.id) === 'd'), [sorted, nowState])
+  const shown = expanded ? sorted : problems
 
   const sections = useMemo(() => {
     if (!grouped) return [{ key: '', name: '', items: shown }]
@@ -173,6 +191,15 @@ export function Heatmap({
       .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, lang)))
       .map(([key, items]) => ({ key, name: key || t('dash.ungrouped'), items }))
   }, [shown, grouped, lang, t])
+
+  const wall = useMemo(() => {
+    if (!grouped) return [{ key: '', name: '', items: sorted }]
+    const map = new Map<string, HeatmapItem[]>()
+    for (const i of sorted) map.set(i.group_name ?? '', [...(map.get(i.group_name ?? '') ?? []), i])
+    return [...map.entries()]
+      .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, lang)))
+      .map(([key, items]) => ({ key, name: key || t('dash.ungrouped'), items }))
+  }, [sorted, grouped, lang, t])
 
   const subtitle = useMemo(() => {
     if (!monitors) return null
@@ -216,9 +243,43 @@ export function Heatmap({
     [place],
   )
 
+  const [wallFocus, setWallFocus] = useState<number | null>(null)
+  const placeSquare = useCallback((id: number, el: HTMLElement) => {
+    const r = el.getBoundingClientRect()
+    const x = Math.min(Math.max(r.left + r.width / 2, 130), window.innerWidth - 130)
+    setTip((p) => (p && p.id === id && p.k === -1 ? p : { id, k: -1, x, y: r.top }))
+  }, [])
+  const wallKey = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Escape') return setTip(null)
+    const sq = Array.from(e.currentTarget.closest('[data-wall]')?.querySelectorAll<HTMLButtonElement>('[data-sq]') ?? [])
+    const i = sq.indexOf(e.currentTarget)
+    let next: HTMLButtonElement | undefined
+    if (e.key === 'ArrowRight') next = sq[i + 1]
+    else if (e.key === 'ArrowLeft') next = sq[i - 1]
+    else if (e.key === 'Home') next = sq[0]
+    else if (e.key === 'End') next = sq[sq.length - 1]
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const dir = e.key === 'ArrowDown' ? 1 : -1
+      const cur = e.currentTarget
+      const cand = sq.filter((o) => (o.offsetTop - cur.offsetTop) * dir > 4)
+      if (cand.length) {
+        const rowTop = dir === 1 ? Math.min(...cand.map((o) => o.offsetTop)) : Math.max(...cand.map((o) => o.offsetTop))
+        next = cand.filter((o) => o.offsetTop === rowTop).sort((a, b) => Math.abs(a.offsetLeft - cur.offsetLeft) - Math.abs(b.offsetLeft - cur.offsetLeft))[0]
+      }
+    } else return
+    e.preventDefault()
+    next?.focus()
+  }, [])
+
   const tipItem = tip && data?.items.find((i) => i.id === tip.id)
   const tipText =
-    tip && tipItem && data
+    tip && tipItem && tip.k === -1
+      ? t('heat.wallTip', {
+          name: tipItem.name,
+          state: t(`heat.s.${nowState.get(tipItem.id) === '-' ? 'none' : ((nowState.get(tipItem.id) ?? 'u') as 'u')}` as 'heat.s.u'),
+          uptime: tipItem.uptime === null ? '—' : formatUptime(tipItem.uptime, 2),
+        })
+      : tip && tipItem && data
       ? t('heat.cell', {
           name: tipItem.name,
           time: bucketLabel(data.from + tip.k * data.bucket_ms, data.from + (tip.k + 1) * data.bucket_ms, lang),
@@ -266,61 +327,116 @@ export function Heatmap({
         ))}
       </div>
 
-      <div className="scrollbar-thin overflow-x-auto px-3 pb-2 sm:px-4">
-        <div className="min-w-[30rem] sm:min-w-0">
-          {q.isPending ? (
-            <div className="grid gap-1.5 py-1">
-              {Array.from({ length: 6 }, (_, i) => (
-                <Skeleton key={i} className="h-4 w-full" />
-              ))}
-            </div>
-          ) : q.isError ? (
-            <div className="flex flex-wrap items-center gap-3 py-4 text-sm">
-              <span className="text-muted-foreground min-w-0 flex-1">
-                {t('heat.failed')} {errorMessage(q.error)}
-              </span>
-              <Button size="sm" variant="outline" onClick={() => q.refetch()}>
-                {t('common.retry')}
-              </Button>
-            </div>
-          ) : sorted.length === 0 ? (
-            <p className="text-muted-foreground py-6 text-center text-sm">{t('heat.empty')}</p>
-          ) : (
-            sections.map((s) => (
-              <div key={s.key} className={grouped ? 'mb-1' : undefined}>
-                {grouped && (
-                  <div className="text-muted-foreground bg-card sticky left-0 flex items-center gap-2 px-1 pt-2 pb-1 text-xs">
-                    <span className="text-foreground truncate font-semibold">{s.name}</span>
-                    <span className="num">{s.items.length}</span>
-                  </div>
-                )}
-                {s.items.map((it) => (
-                  <Row
-                    key={it.id}
-                    item={it}
-                    dot={dots.get(it.id) ?? statusDot.unknown}
-                    activeK={tip && tip.id === it.id ? tip.k : -1}
-                    label={t('heat.row', { name: it.name, uptime: it.uptime === null ? '—' : formatUptime(it.uptime, 2) })}
-                    onHover={place}
-                    onLeave={leave}
-                    onOpen={onOpen}
-                    onKey={keyNav}
-                    onFocusRow={focusRow}
-                  />
-                ))}
-              </div>
-            ))
-          )}
+      {q.isPending ? (
+        <div className="px-4 pb-3 sm:px-5">
+          <div className="flex flex-wrap gap-1">
+            {Array.from({ length: 24 }, (_, i) => (
+              <Skeleton key={i} className="size-3.5 rounded-[4px]" />
+            ))}
+          </div>
         </div>
-      </div>
-      {sorted.length > COLLAPSED_ROWS && (
-        <div className="border-t px-4 py-2 sm:px-5">
-          <Button size="sm" variant="ghost" className="text-muted-foreground -ml-2" onClick={() => onChange({ expanded: !expanded })} aria-expanded={expanded}>
-            {expanded ? t('heat.showFewer') : t('heat.showAll', { n: sorted.length })}
+      ) : q.isError ? (
+        <div className="flex flex-wrap items-center gap-3 px-4 py-4 text-sm sm:px-5">
+          <span className="text-muted-foreground min-w-0 flex-1">
+            {t('heat.failed')} {errorMessage(q.error)}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => q.refetch()}>
+            {t('common.retry')}
           </Button>
         </div>
+      ) : sorted.length === 0 ? (
+        <p className="text-muted-foreground px-4 py-6 text-center text-sm sm:px-5">{t('heat.empty')}</p>
+      ) : (
+        <>
+          <div data-wall className="flex flex-wrap gap-x-5 gap-y-3 px-4 pb-4 sm:px-5" role="group" aria-label={t('heat.wall')}>
+            {wall.map((g) => (
+              <div key={g.key} className="min-w-0">
+                {grouped && (
+                  <div className="text-muted-foreground mb-1.5 flex max-w-full items-center gap-1.5 text-[11px]">
+                    <span className="text-foreground truncate font-semibold">{g.name}</span>
+                    <span className="num">{g.items.length}</span>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1">
+                  {g.items.map((it, idx) => {
+                    const st = nowState.get(it.id) ?? '-'
+                    const focusable = wallFocus === null ? g === wall[0] && idx === 0 : wallFocus === it.id
+                    return (
+                      <button
+                        key={it.id}
+                        type="button"
+                        data-sq
+                        tabIndex={focusable ? 0 : -1}
+                        aria-label={t('heat.wallTip', {
+                          name: it.name,
+                          state: t(`heat.s.${st === '-' ? 'none' : (st as 'u')}` as 'heat.s.u'),
+                          uptime: it.uptime === null ? '—' : formatUptime(it.uptime, 2),
+                        })}
+                        onClick={() => onOpen(it.id)}
+                        onMouseEnter={(e) => placeSquare(it.id, e.currentTarget)}
+                        onMouseLeave={leave}
+                        onFocus={(e) => {
+                          setWallFocus(it.id)
+                          if (e.currentTarget.matches(':focus-visible')) placeSquare(it.id, e.currentTarget)
+                        }}
+                        onBlur={leave}
+                        onKeyDown={wallKey}
+                        className={cn(
+                          'focus-visible:ring-ring size-3.5 rounded-[4px] outline-none transition-transform duration-100 hover:scale-125 focus-visible:scale-125 focus-visible:ring-2',
+                          cellCls[st] ?? cellCls['-'],
+                        )}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-muted-foreground flex items-center justify-between gap-3 border-t px-4 pt-2.5 pb-1 text-xs sm:px-5">
+            <span>
+              {expanded ? t('heat.allTitle', { n: sorted.length }) : t('heat.problemsTitle', { n: problems.length })}
+            </span>
+            {sorted.length > problems.length && (
+              <Button size="sm" variant="ghost" className="text-muted-foreground -mr-2 h-7" onClick={() => onChange({ expanded: !expanded })} aria-expanded={expanded}>
+                {expanded ? t('heat.showFewer') : t('heat.showAll', { n: sorted.length })}
+              </Button>
+            )}
+          </div>
+          <div className="scrollbar-thin overflow-x-auto px-3 pb-3 sm:px-4">
+            <div className="min-w-[30rem] sm:min-w-0">
+              {shown.length === 0 ? (
+                <p className="text-muted-foreground py-3 text-center text-sm">{t('heat.noProblems')}</p>
+              ) : (
+                sections.map((s) => (
+                  <div key={s.key} className={grouped ? 'mb-1' : undefined}>
+                    {grouped && (
+                      <div className="text-muted-foreground bg-card sticky left-0 flex items-center gap-2 px-1 pt-2 pb-1 text-xs">
+                        <span className="text-foreground truncate font-semibold">{s.name}</span>
+                        <span className="num">{s.items.length}</span>
+                      </div>
+                    )}
+                    {s.items.map((it) => (
+                      <Row
+                        key={it.id}
+                        item={it}
+                        dot={dots.get(it.id) ?? statusDot.unknown}
+                        activeK={tip && tip.id === it.id ? tip.k : -1}
+                        label={t('heat.row', { name: it.name, uptime: it.uptime === null ? '—' : formatUptime(it.uptime, 2) })}
+                        onHover={place}
+                        onLeave={leave}
+                        onOpen={onOpen}
+                        onKey={keyNav}
+                        onFocusRow={focusRow}
+                      />
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
       )}
-      {sorted.length <= COLLAPSED_ROWS && <div className="h-2" />}
 
       {tipText && tip && (
         <div

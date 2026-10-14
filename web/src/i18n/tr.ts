@@ -976,4 +976,9 @@ export const tr: Dict = {
   "custom.moveUp": "{name} bölümünü yukarı taşı",
   "custom.moveDown": "{name} bölümünü aşağı taşı",
   "custom.reset": "Varsayılana sıfırla",
+  "heat.wall": "Monitör durum duvarı",
+  "heat.wallTip": "{name} · {state} · {uptime} çalışma süresi",
+  "heat.problemsTitle": "Bu dönemde sorun yaşayanlar · {n}",
+  "heat.allTitle": "Tüm monitörler · {n}",
+  "heat.noProblems": "Bu dönemde sorun yok",
 }

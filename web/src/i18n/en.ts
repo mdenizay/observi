@@ -975,6 +975,11 @@ export const en = {
   "custom.moveUp": "Move {name} up",
   "custom.moveDown": "Move {name} down",
   "custom.reset": "Reset to default",
+  "heat.wall": "Monitor status wall",
+  "heat.wallTip": "{name} · {state} · {uptime} uptime",
+  "heat.problemsTitle": "With issues in this period · {n}",
+  "heat.allTitle": "All monitors · {n}",
+  "heat.noProblems": "No problems in this period",
 }
 
 export type Dict = typeof en
