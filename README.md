@@ -28,6 +28,7 @@ It runs happily on a Raspberry Pi.
 - **Telegram interaction** — mute or put a monitor under maintenance from the alert's buttons, and ask
   `/status`, `/down`, `/ssl`, `/domains` in the chat (long polling, nothing exposed publicly)
 - **Audit log** of who changed what, including failed logins
+- **Status heat map** on the dashboard (24h / 7d / 30d, one row per monitor) and a customizable dashboard: show, hide and reorder widgets, saved to your account
 - **Account security** — two-factor authentication (TOTP with recovery codes), **passkeys**, session management,
   admin-issued password reset links and per-user **API tokens**
 - **SSL certificate monitoring** — HTTPS monitors show the certificate's expiry date; a distinct

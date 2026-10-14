@@ -111,6 +111,8 @@ pub struct AppState {
     pub domains: Arc<RwLock<crate::domain::Domains>>,
     /// Short-lived sign-in challenges (second factor, passkey ceremonies).
     pub challenges: Arc<crate::security::Challenges>,
+    /// Cached heat-map data per range (shared by all users, filtered on read).
+    pub heatmaps: Arc<crate::overview::HeatmapCache>,
 }
 
 impl AppState {

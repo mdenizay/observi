@@ -4,13 +4,6 @@ import {
   ArrowUpCircle,
   Bell,
   CheckCheck,
-  CircleCheck,
-  CircleX,
-  Globe,
-  Lock,
-  ShieldAlert,
-  ShieldCheck,
-  type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useIsAdmin } from '@/hooks/use-auth'
@@ -19,61 +12,15 @@ import { useNow } from '@/hooks/use-now'
 import { useUpdateInfo } from '@/hooks/use-update'
 import { useI18n } from '@/i18n'
 import { errorMessage } from '@/lib/api'
-import { formatDate, formatDuration, formatRelative } from '@/lib/format'
-import { translateMessage } from '@/lib/messages'
+import { formatRelative } from '@/lib/format'
 import type { Activity } from '@/lib/types'
+import { describeActivity, kindStyle } from '@/lib/activity-view'
 import { cn } from '@/lib/utils'
-
-const kindStyle: Record<Activity['kind'], { icon: LucideIcon; cls: string }> = {
-  down: { icon: CircleX, cls: 'text-down bg-down/10' },
-  up: { icon: CircleCheck, cls: 'text-up bg-up/10' },
-  ssl_expiring: { icon: Lock, cls: 'text-pending bg-pending/12' },
-  ssl_expired: { icon: ShieldAlert, cls: 'text-down bg-down/10' },
-  ssl_renewed: { icon: ShieldCheck, cls: 'text-up bg-up/10' },
-  domain_expiring: { icon: Globe, cls: 'text-pending bg-pending/12' },
-  domain_expired: { icon: Globe, cls: 'text-down bg-down/10' },
-  domain_renewed: { icon: Globe, cls: 'text-up bg-up/10' },
-}
 
 function Item({ a, unread, now, onOpen }: { a: Activity; unread: boolean; now: number; onOpen: () => void }) {
   const { t, lang } = useI18n()
   const st = kindStyle[a.kind]
-  const d = a.data
-  const name = a.monitor_name
-  let title: string
-  let sub: string | null = null
-  switch (a.kind) {
-    case 'down':
-      title = t('act.down', { name })
-      sub = d?.message ? translateMessage(d.message, lang) : null
-      break
-    case 'up':
-      title = t('act.up', { name })
-      sub = d?.down_for_ms != null ? t('act.downFor', { duration: formatDuration(d.down_for_ms) }) : null
-      break
-    case 'ssl_expiring':
-      title = t('act.sslExpiring', { name, count: Math.max(0, d?.days_left ?? 0) })
-      sub = d?.expires_at ? t('ssl.validUntil', { date: formatDate(d.expires_at) }) : null
-      break
-    case 'ssl_expired':
-      title = t('act.sslExpired', { name })
-      sub = d?.expires_at ? t('ssl.expiredOn', { date: formatDate(d.expires_at) }) : null
-      break
-    case 'domain_expiring':
-      title = t('act.domainExpiring', { domain: d?.domain ?? name, count: Math.max(0, d?.days_left ?? 0) })
-      sub = d?.expires_at ? t('ssl.validUntil', { date: formatDate(d.expires_at) }) : null
-      break
-    case 'domain_expired':
-      title = t('act.domainExpired', { domain: d?.domain ?? name })
-      sub = d?.expires_at ? t('ssl.expiredOn', { date: formatDate(d.expires_at) }) : null
-      break
-    case 'domain_renewed':
-      title = t('act.domainRenewed', { domain: d?.domain ?? name, date: d?.expires_at ? formatDate(d.expires_at) : '—' })
-      break
-    default:
-      title = t('act.sslRenewed', { name })
-      sub = d?.expires_at ? t('ssl.validUntil', { date: formatDate(d.expires_at) }) : null
-  }
+  const { title, sub } = describeActivity(a, t, lang)
   return (
     <li>
       <button

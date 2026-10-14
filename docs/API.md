@@ -225,3 +225,11 @@ Create tokens for scripts and integrations; they act with the permissions of the
 curl -H "Authorization: Bearer obs_…" https://status.example.com/api/monitors
 ```
 
+## Dashboard overview
+- `GET /api/overview/heatmap?range=24h|7d|30d` → `{range, from, to, bucket_ms, buckets, items: [{id, name, group_name, uptime, cells}]}`.
+  `cells` has one character per time bucket (oldest first): `u` up, `w` partly down, `d` down (half or more of the checks failed),
+  `m` maintenance, `p` pending, `x` paused, `-` no data. Buckets: 96 × 15 min, 84 × 2 h and 90 × 8 h. Regular users only get their monitors.
+  Cached on the server for 60 seconds.
+- `GET /api/auth/preferences` → `{preferences: object}`; `PUT /api/auth/preferences` `{preferences: object}` (max 16 KB) — free-form
+  per-user settings, used for the dashboard layout.
+

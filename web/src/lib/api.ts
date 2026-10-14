@@ -29,6 +29,7 @@ import type {
   PasskeyItem,
   TokenItem,
   SecuritySummary,
+  HeatmapData,
 } from './types'
 import type { PublicKeyJSON } from './webauthn'
 
@@ -126,6 +127,9 @@ export const api = {
     get<{ valid: boolean; name: string }>(`/auth/reset/${encodeURIComponent(token)}`, { silent401: true }),
   resetPassword: (token: string, password: string) => post('/auth/reset', { token, password }, { silent401: true }),
 
+  preferences: () => get<{ preferences: Record<string, unknown> }>('/auth/preferences'),
+  savePreferences: (preferences: Record<string, unknown>) => put('/auth/preferences', { preferences }),
+  heatmap: (range: string) => get<HeatmapData>(`/overview/heatmap?range=${range}`),
   security: () => get<SecuritySummary>('/auth/security'),
   sessions: () => get<{ items: SessionItem[] }>('/auth/sessions'),
   revokeSession: (id: string) => del(`/auth/sessions/${encodeURIComponent(id)}`),

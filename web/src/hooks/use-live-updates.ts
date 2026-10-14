@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { Activity, Beat, BeatEvent, Monitor, MonitorSummary } from '@/lib/types'
 
 const MAX_LIST_BEATS = 50
+let heatTimer: ReturnType<typeof setTimeout> | undefined
 
 // ---- connection status (for the "Live" indicator) ----
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting'
@@ -107,6 +108,9 @@ export function useLiveUpdates(enabled: boolean) {
       })
       es.addEventListener('monitors', () => {
         qc.invalidateQueries({ queryKey: ['monitors'] })
+        // The status overview is cached server-side, so don't hammer it on bursts of changes.
+        clearTimeout(heatTimer)
+        heatTimer = setTimeout(() => qc.invalidateQueries({ queryKey: ['heatmap'] }), 2000)
       })
       es.addEventListener('error', () => {
         hadError = true

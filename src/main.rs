@@ -11,6 +11,7 @@ mod i18n;
 mod maintenance;
 mod models;
 mod notify;
+mod overview;
 mod report;
 mod scheduler;
 mod security;
@@ -231,6 +232,7 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
             maint: Arc::default(),
             domains: Arc::new(RwLock::new(domains)),
             challenges: Arc::default(),
+            heatmaps: Arc::default(),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);

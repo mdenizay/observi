@@ -186,6 +186,10 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     last_used_at INTEGER,
     expires_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS certs (
     monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,

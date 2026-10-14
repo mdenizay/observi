@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
@@ -29,6 +29,11 @@ import { TagChips, TagFilter } from '@/components/tags'
 import { expiryIsBad, expiryNeedsAttention } from '@/lib/cert'
 import { StatusBadge, statusDot } from '@/components/status-badge'
 import { BulkBar } from '@/components/bulk-bar'
+import { CustomizeButton, CustomizeDialog } from '@/components/dashboard-customize'
+import { ExpiringSoon, RecentIncidents, SlowestMonitors } from '@/components/dashboard-widgets'
+import { Heatmap } from '@/components/heatmap'
+import { useDashboardPrefs } from '@/hooks/use-dashboard-prefs'
+import type { WidgetId } from '@/lib/dashboard-prefs'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
@@ -493,6 +498,9 @@ export function DashboardPage() {
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
+  const { prefs, update, reset } = useDashboardPrefs()
+  const [customizing, setCustomizing] = useState(false)
+  const openMonitor = useCallback((mid: number) => navigate(`/dashboard/${mid}`), [navigate])
   const qc = useQueryClient()
   const [sel, setSel] = useState<Set<number>>(() => new Set())
   const selRef = useRef(sel)
@@ -741,8 +749,7 @@ export function DashboardPage() {
     </button>
   )
 
-  return (
-    <div className="flex flex-col gap-4 sm:gap-5">
+  const tilesEl = (
       <StatusTiles
         counts={counts}
         loaded={!!monitors}
@@ -750,7 +757,9 @@ export function DashboardPage() {
         onToggle={toggleFilter}
         ssl={{ count: sslCount, bad: sslExpired, active: sslOnly, onToggle: () => setSslOnly((v) => !v) }}
       />
-
+  )
+  const monitorsEl = (
+    <>
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-sm">
@@ -793,6 +802,7 @@ export function DashboardPage() {
             {viewBtn('grid', LayoutGrid, t('view.grid'))}
             {viewBtn('list', List, t('view.list'))}
           </div>
+          <CustomizeButton onClick={() => setCustomizing(true)} />
           {isAdmin && (
             <Button asChild className="max-sm:size-9 max-sm:px-0">
               <Link to="/monitors/new" aria-label={t('nav.newMonitor')}>
@@ -889,6 +899,32 @@ export function DashboardPage() {
             )
           })
         : filtered.length > 0 && renderMonitors(filtered)}
+    </>
+  )
+
+  const widgetEls: Record<WidgetId, React.ReactNode> = {
+    overview: (
+      <Heatmap
+        monitors={monitors}
+        range={prefs.heatmap.range}
+        grouped={prefs.heatmap.grouped}
+        expanded={prefs.heatmap.expanded}
+        onChange={(p) => update((cur) => ({ ...cur, heatmap: { ...cur.heatmap, ...p } }))}
+        onOpen={openMonitor}
+      />
+    ),
+    tiles: tilesEl,
+    monitors: monitorsEl,
+    expiring: <ExpiringSoon monitors={monitors} onOpen={openMonitor} />,
+    incidents: <RecentIncidents onOpen={openMonitor} />,
+    slowest: <SlowestMonitors monitors={monitors} onOpen={openMonitor} />,
+  }
+
+  return (
+    <div className="flex flex-col gap-4 sm:gap-5">
+      {prefs.widgets.filter((w) => w.visible).map((w) => (
+        <Fragment key={w.id}>{widgetEls[w.id]}</Fragment>
+      ))}
 
       {isAdmin && selIds.length > 0 && <BulkBar
           ids={selIds}
@@ -898,6 +934,14 @@ export function DashboardPage() {
         />}
 
       {/* Detail drawer (route-driven) */}
+      <CustomizeDialog
+        open={customizing}
+        onOpenChange={setCustomizing}
+        prefs={prefs}
+        onChange={(widgets) => update((cur) => ({ ...cur, widgets }))}
+        onReset={reset}
+      />
+
       <Sheet open={selected !== undefined} onOpenChange={(o) => !o && closeDrawer()}>
         <SheetContent side="right" className="bg-background w-full max-w-none gap-0 p-0 sm:max-w-xl 2xl:max-w-2xl">
           <SheetTitle className="sr-only">{t('dash.drawerTitle')}</SheetTitle>

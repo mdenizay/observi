@@ -347,3 +347,20 @@ export interface SecuritySummary {
   tokens: number
   sessions: number
 }
+
+export interface HeatmapItem {
+  id: number
+  name: string
+  group_name: string | null
+  uptime: number | null
+  /** One char per bucket, oldest first: u up, w partly down, d down, m maintenance, p pending, x paused, - no data. */
+  cells: string
+}
+export interface HeatmapData {
+  range: '24h' | '7d' | '30d'
+  from: number
+  to: number
+  bucket_ms: number
+  buckets: number
+  items: HeatmapItem[]
+}

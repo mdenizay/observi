@@ -126,6 +126,7 @@ pub fn router() -> Router<AppState> {
         .merge(crate::domain::router())
         .merge(crate::report::router())
         .merge(crate::security::router())
+        .merge(crate::overview::router())
         .fallback(|| async { ApiError::NotFound })
 }
 
