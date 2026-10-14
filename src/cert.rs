@@ -289,6 +289,18 @@ async fn announce(state: &AppState, m: &Monitor, entry: &CertEntry, notice: Noti
             (title, body, true)
         }
     };
+    let kind = match notice {
+        Notice::Expiring(_) => "ssl_expiring",
+        Notice::Expired => "ssl_expired",
+        Notice::Renewed => "ssl_renewed",
+    };
+    crate::activity::record(
+        state,
+        kind,
+        m,
+        Some(serde_json::json!({ "expires_at": entry.expires_at, "days_left": entry.days_left(now_ms()) })),
+    )
+    .await;
     let alert = Alert {
         title,
         body,

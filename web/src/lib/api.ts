@@ -12,6 +12,8 @@ import type {
   Notification,
   NotificationInput,
   Role,
+  Activity,
+  BulkAction,
   ReleasesResponse,
   UpdateInfo,
   User,
@@ -110,6 +112,13 @@ export const api = {
   monitor: (id: number) => get<Monitor>(`/monitors/${id}`),
   createMonitor: (m: MonitorInput) => post<Monitor>('/monitors', m),
   updateMonitor: (id: number, m: MonitorInput) => put<Monitor>(`/monitors/${id}`, m),
+  bulkMonitors: (body: {
+    ids: number[]
+    action: BulkAction
+    group_id?: number | null
+    notification_id?: number
+  }) => post<{ affected: number }>('/monitors/bulk', body),
+  activity: (limit = 30) => get<{ items: Activity[] }>(`/activity?limit=${limit}`),
   deleteMonitor: (id: number) => del(`/monitors/${id}`),
   pauseMonitor: (id: number) => post(`/monitors/${id}/pause`),
   resumeMonitor: (id: number) => post(`/monitors/${id}/resume`),

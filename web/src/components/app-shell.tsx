@@ -1,6 +1,7 @@
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { matchPath, NavLink, Outlet, useLocation } from 'react-router'
 import { Bell, ChevronRight, Folder, House, Loader2, Menu, Plus, Search, Settings, Users, type LucideIcon } from 'lucide-react'
+import { ActivityBell } from '@/components/activity-bell'
 import { CommandPalette } from '@/components/command-palette'
 import { Logo } from '@/components/logo'
 import { UpdateNotice } from '@/components/update-notice'
@@ -176,6 +177,15 @@ export function AppShell() {
             </Fragment>
           ))}
         </nav>
+        <button
+          type="button"
+          onClick={() => setPalette(true)}
+          className="bg-card text-muted-foreground hover:border-border-strong focus-visible:ring-ring/50 ml-1 hidden h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border pr-1.5 pl-3 text-sm shadow-xs transition-colors outline-none focus-visible:ring-[3px] sm:flex sm:max-w-[28rem]"
+        >
+          <Search className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-left">{t('hdr.searchPlaceholder')}</span>
+          <Kbd>{isMac ? '⌘' : 'Ctrl'} K</Kbd>
+        </button>
         <div className="flex-1" />
         <div className="hidden sm:block">
           <LiveIndicator />
@@ -183,16 +193,6 @@ export function AppShell() {
         <div className="sm:hidden">
           <LiveIndicator compact />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setPalette(true)}
-          className="text-muted-foreground hidden h-8 gap-2 pr-1.5 pl-2.5 font-normal sm:inline-flex"
-        >
-          <Search className="size-3.5" />
-          <span className="pr-3">{t('search.button')}</span>
-          <Kbd>{isMac ? '⌘' : 'Ctrl'} K</Kbd>
-        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -202,6 +202,7 @@ export function AppShell() {
         >
           <Search />
         </Button>
+        <ActivityBell />
         <div className="lg:hidden">
           <UserMenu compact />
         </div>

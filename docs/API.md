@@ -78,10 +78,20 @@ type Cert = {
 // "SSL certificate problem (site is reachable): <reason>".
 ```
 
+## Bulk actions (superadmin)
+- `POST /api/monitors/bulk` `{ids: number[] (max 500), action: "move"|"pause"|"resume"|"delete"|"notify_add"|"notify_remove",
+  group_id?: number|null (move; null ungroups), notification_id?: number}` → `{affected}`.
+  Errors: `no_selection`, `bulk_action_invalid`, `group_not_found`, `notification_not_found`.
+
+## Activity feed
+- `GET /api/activity?limit=30` → `{items: Activity[]}` newest first; regular users only see their monitors.
+  `Activity = {id, t, kind: "down"|"up"|"ssl_expiring"|"ssl_expired"|"ssl_renewed", monitor_id, monitor_name,
+  data: {message?, down_for_ms?, expires_at?, days_left?} | null}`. Kept for 90 days.
+
 ## Live updates
 - `GET /api/events` — Server-Sent Events. Event name `beat`, data
   `{monitor_id, t, s, l, m, status}`. Filtered to monitors the user can see.
-  Event `monitors` (no data) means the monitor list changed → refetch.
+  Event `activity` carries one Activity object (same visibility filtering). Event `monitors` (no data) means the monitor list changed → refetch.
 
 ## Groups (superadmin)
 A monitor belongs to at most one group. Granting a user a group gives access to

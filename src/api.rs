@@ -88,6 +88,8 @@ pub fn router() -> Router<AppState> {
         .route("/monitors/{id}/heartbeats", get(monitor_heartbeats))
         .route("/monitors/{id}/events", get(monitor_events))
         .route("/events", get(events))
+        .route("/activity", get(activity_list))
+        .route("/monitors/bulk", post(bulk_monitors))
         .route("/version", get(version))
         .route("/update", get(update_status))
         .route("/update/check", post(update_check))
@@ -626,6 +628,157 @@ async fn monitor_events(
     Ok(Json(rows))
 }
 
+// ---------- activity feed ----------
+
+#[derive(Deserialize)]
+struct ActivityQuery {
+    limit: Option<usize>,
+}
+
+async fn activity_list(
+    State(st): State<AppState>,
+    AuthUser(user): AuthUser,
+    Query(q): Query<ActivityQuery>,
+) -> ApiResult<Json<Value>> {
+    let visible = visible_ids(&st, &user).await?;
+    let limit = q.limit.unwrap_or(30).clamp(1, 100);
+    let items = st.db.call(move |c| crate::activity::list(c, limit, visible.as_ref())).await?;
+    Ok(Json(json!({ "items": items })))
+}
+
+// ---------- bulk monitor actions ----------
+
+#[derive(Deserialize)]
+struct BulkReq {
+    ids: Vec<i64>,
+    action: String,
+    #[serde(default)]
+    group_id: Option<i64>,
+    #[serde(default)]
+    notification_id: Option<i64>,
+}
+
+const BULK_MAX: usize = 500;
+
+async fn bulk_monitors(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<BulkReq>) -> ApiResult<Json<Value>> {
+    let mut ids = req.ids;
+    ids.sort_unstable();
+    ids.dedup();
+    ids.truncate(BULK_MAX);
+    if ids.is_empty() {
+        return Err(bad("no_selection", "Select at least one monitor"));
+    }
+    let action = req.action.clone();
+    if !matches!(action.as_str(), "move" | "pause" | "resume" | "delete" | "notify_add" | "notify_remove") {
+        return Err(bad("bulk_action_invalid", "Unknown bulk action"));
+    }
+    let (group_id, notification_id) = (req.group_id, req.notification_id);
+
+    // Apply in one transaction; collect what the scheduler must do afterwards.
+    let ids2 = ids.clone();
+    let outcome = st
+        .db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            let existing: Vec<i64> = {
+                let mut q = tx.prepare("SELECT id FROM monitors WHERE id = ?")?;
+                ids2.iter().filter(|id| q.exists([**id]).unwrap_or(false)).copied().collect()
+            };
+            let mut changed: Vec<i64> = Vec::new();
+            let mut error: Option<(&'static str, &'static str)> = None;
+            match action.as_str() {
+                "move" => {
+                    if let Some(g) = group_id
+                        && !tx.query_row("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?)", [g], |r| r.get::<_, bool>(0))?
+                    {
+                        error = Some(("group_not_found", "Group not found"));
+                    } else {
+                        for id in &existing {
+                            tx.execute("UPDATE monitors SET group_id = ? WHERE id = ?", rusqlite::params![group_id, id])?;
+                            changed.push(*id);
+                        }
+                    }
+                }
+                "pause" | "resume" => {
+                    let (from, to) = if action == "pause" { (1, 0) } else { (0, 1) };
+                    for id in &existing {
+                        if tx.execute("UPDATE monitors SET active = ? WHERE id = ? AND active = ?", rusqlite::params![to, id, from])? > 0 {
+                            changed.push(*id);
+                        }
+                    }
+                }
+                "delete" => {
+                    for id in &existing {
+                        tx.execute("DELETE FROM heartbeats WHERE monitor_id = ?", [id])?;
+                        tx.execute("DELETE FROM monitors WHERE id = ?", [id])?;
+                        changed.push(*id);
+                    }
+                }
+                _ => {
+                    let nid = notification_id.unwrap_or(-1);
+                    if !tx.query_row("SELECT EXISTS(SELECT 1 FROM notifications WHERE id = ?)", [nid], |r| r.get::<_, bool>(0))? {
+                        error = Some(("notification_not_found", "Notification channel not found"));
+                    } else {
+                        for id in &existing {
+                            if action == "notify_add" {
+                                tx.execute(
+                                    "INSERT OR IGNORE INTO monitor_notifications (monitor_id, notification_id) VALUES (?, ?)",
+                                    [id, &nid],
+                                )?;
+                            } else {
+                                tx.execute(
+                                    "DELETE FROM monitor_notifications WHERE monitor_id = ? AND notification_id = ?",
+                                    [id, &nid],
+                                )?;
+                            }
+                            changed.push(*id);
+                        }
+                    }
+                }
+            }
+            if error.is_some() {
+                return Ok((error, changed, Vec::new()));
+            }
+            // Monitors to (re)start after a resume.
+            let mut to_start = Vec::new();
+            if action == "resume" {
+                for id in &changed {
+                    if let Some(m) = models::get_monitor(&tx, *id)? {
+                        to_start.push(m);
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok((None, changed, to_start))
+        })
+        .await?;
+
+    let (error, changed, to_start) = outcome;
+    if let Some((code, msg)) = error {
+        return Err(bad(code, msg));
+    }
+    match req.action.as_str() {
+        "pause" => changed.iter().for_each(|id| scheduler::pause(&st, *id)),
+        "resume" => {
+            for m in to_start {
+                st.scheduler.start(&st, m, Duration::ZERO);
+            }
+        }
+        "delete" => {
+            for id in &changed {
+                st.scheduler.stop(*id);
+            }
+            let mut live = st.live.write().unwrap_or_else(|e| e.into_inner());
+            for id in &changed {
+                live.remove(id);
+            }
+        }
+        _ => {}
+    }
+    st.notify_monitors_changed();
+    Ok(Json(json!({ "affected": changed.len() })))
+}
+
 // ---------- live events (SSE) ----------
 
 async fn events(
@@ -649,6 +802,15 @@ async fn events(
                     let ev = SseEvent::default()
                         .event("beat")
                         .data(serde_json::to_string(&b).unwrap_or_default());
+                    return Some((Ok(ev), (rx, visible, st, user, sd)));
+                }
+                Ok(Event::Activity(a)) => {
+                    if visible.as_ref().is_some_and(|v| !v.contains(&a.monitor_id)) {
+                        continue;
+                    }
+                    let ev = SseEvent::default()
+                        .event("activity")
+                        .data(serde_json::to_string(&a).unwrap_or_default());
                     return Some((Ok(ev), (rx, visible, st, user, sd)));
                 }
                 Ok(Event::MonitorsChanged) => {

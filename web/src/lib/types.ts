@@ -169,3 +169,16 @@ export interface UpdateInfo {
   error: string | null
   last_result: { ok: boolean; version: string; error: string | null; at: number } | null
 }
+
+export type ActivityKind = 'down' | 'up' | 'ssl_expiring' | 'ssl_expired' | 'ssl_renewed'
+
+export interface Activity {
+  id: number
+  t: number
+  kind: ActivityKind
+  monitor_id: number
+  monitor_name: string
+  data: { message?: string; down_for_ms?: number; expires_at?: number; days_left?: number } | null
+}
+
+export type BulkAction = 'move' | 'pause' | 'resume' | 'delete' | 'notify_add' | 'notify_remove'

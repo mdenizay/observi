@@ -99,7 +99,11 @@ fn record_result(state: &AppState, monitor: &Monitor, result: &check::CheckResul
         let st = state.clone();
         let m = monitor.clone();
         let msg = beat.m.clone().unwrap_or_default();
-        tokio::spawn(async move { notify::monitor_changed(&st, &m, s, &msg, down_for).await });
+        tokio::spawn(async move {
+            let kind = if s == UP { "up" } else { "down" };
+            crate::activity::record(&st, kind, &m, Some(crate::activity::status_data(&msg, down_for))).await;
+            notify::monitor_changed(&st, &m, s, &msg, down_for).await;
+        });
     }
     beat.s == PENDING
 }
@@ -261,6 +265,7 @@ pub async fn maintenance(state: AppState, retention_days: i64) {
                         "DELETE FROM heartbeats WHERE monitor_id NOT IN (SELECT id FROM monitors)",
                         [],
                     )?;
+                    crate::activity::prune(c, cutoff)?;
                     c.execute_batch("PRAGMA optimize; PRAGMA wal_checkpoint(TRUNCATE);")?;
                 }
                 Ok(out)

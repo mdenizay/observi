@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS branding_logo (
     data BLOB NOT NULL,
     updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    t INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+    monitor_name TEXT NOT NULL,
+    data TEXT
+);
+CREATE INDEX IF NOT EXISTS activity_t ON activity (t);
 CREATE TABLE IF NOT EXISTS certs (
     monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,
@@ -150,6 +159,7 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE monitors ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL;",
         )?;
     }
+    crate::activity::backfill(conn)?;
     Ok(())
 }
 

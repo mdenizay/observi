@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   ArrowDownCircle,
@@ -22,7 +23,9 @@ import { Sparkline } from '@/components/sparkline'
 import { SslBadge } from '@/components/ssl-badge'
 import { sslIsBad, sslNeedsAttention } from '@/lib/cert'
 import { StatusBadge, statusDot } from '@/components/status-badge'
+import { BulkBar } from '@/components/bulk-bar'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -34,7 +37,7 @@ import { useNow } from '@/hooks/use-now'
 import { DASHBOARD_SEARCH_ID } from '@/hooks/use-shortcuts'
 import { useI18n } from '@/i18n'
 import { formatLatency, formatNumber, formatRelative, formatUptime, monitorTarget } from '@/lib/format'
-import type { MonitorSummary } from '@/lib/types'
+import type { Group, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Eff = 'up' | 'down' | 'pending' | 'paused'
@@ -161,32 +164,74 @@ function StatusTiles({
   )
 }
 
+/* ---------------------------------------------------------------- selection */
+
+type CheckState = boolean | 'indeterminate'
+
+function SelectBox({
+  checked,
+  label,
+  onToggle,
+  className,
+}: {
+  checked: CheckState
+  label: string
+  onToggle: (shift: boolean) => void
+  className?: string
+}) {
+  return (
+    <Checkbox
+      checked={checked}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle(e.shiftKey)
+      }}
+      onCheckedChange={() => {}}
+      className={className}
+    />
+  )
+}
+
+const checkedCard = 'border-primary/60 bg-primary/[0.05] ring-primary/40 ring-2'
+
 /* ---------------------------------------------------------------- grid card */
 
 const MonitorCard = memo(function MonitorCard({
   m,
   selected,
+  checked,
+  selectable,
+  selecting,
   now,
-  onOpen,
+  onPick,
+  onToggle,
 }: {
   m: MonitorSummary
   selected: boolean
+  checked: boolean
+  selectable: boolean
+  selecting: boolean
   now: number
-  onOpen: (id: number) => void
+  onPick: (id: number, e: React.MouseEvent) => void
+  onToggle: (id: number, shift: boolean) => void
 }) {
   const { t } = useI18n()
   const status = effectiveStatus(m)
   const paused = status === 'paused'
   return (
+    <div className="group relative min-w-0">
     <button
       type="button"
-      onClick={() => onOpen(m.id)}
-      aria-pressed={selected}
+      onClick={(e) => onPick(m.id, e)}
+      aria-pressed={selectable && selecting ? checked : selected}
       className={cn(
-        'bg-card shadow-card focus-visible:ring-ring/50 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-4 text-left transition-[border-color,box-shadow,background-color] duration-150 outline-none focus-visible:ring-[3px]',
+        'h-full w-full bg-card shadow-card focus-visible:ring-ring/50 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-4 text-left transition-[border-color,box-shadow,background-color] duration-150 outline-none focus-visible:ring-[3px]',
         status === 'down' && 'border-down/40 bg-down/[0.045] hover:border-down/60',
         paused && 'opacity-60 hover:opacity-90',
         selected && 'ring-primary/50 border-primary/50 ring-2',
+        checked && checkedCard,
       )}
     >
       <div className="flex items-center gap-2.5">
@@ -209,6 +254,20 @@ const MonitorCard = memo(function MonitorCard({
         </span>
       </div>
     </button>
+    {selectable && (
+      <SelectBox
+        checked={checked}
+        label={t('bulk.selectMonitor', { name: m.name })}
+        onToggle={(shift) => onToggle(m.id, shift)}
+        className={cn(
+          'bg-card absolute -top-1.5 -right-1.5 z-10 size-5 rounded-md shadow-sm transition-opacity duration-150',
+          selecting || checked
+            ? 'opacity-100'
+            : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+        )}
+      />
+    )}
+    </div>
   )
 })
 
@@ -233,15 +292,32 @@ function SkeletonCard() {
 const rowGrid =
   'grid grid-cols-[minmax(0,1fr)_5.5rem_1rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_5.5rem_5rem_1rem] xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_6rem_5.5rem_5rem_7rem_1rem] items-center gap-4'
 
-function ListHeader() {
+function ListHeader({
+  selectable,
+  checked,
+  onToggleAll,
+}: {
+  selectable: boolean
+  checked: CheckState
+  onToggleAll: () => void
+}) {
   const { t } = useI18n()
   return (
     <div
       className={cn(
         rowGrid,
-        'bg-card/95 text-muted-foreground sticky top-14 z-10 rounded-t-xl border-b px-4 py-2 text-xs font-medium backdrop-blur',
+        'bg-card/95 text-muted-foreground sticky top-14 z-10 rounded-t-xl border-b py-2 pr-4 text-xs font-medium backdrop-blur',
+        selectable ? 'pl-11' : 'pl-4',
       )}
     >
+      {selectable && (
+        <SelectBox
+          checked={checked}
+          label={t('bulk.selectAll')}
+          onToggle={onToggleAll}
+          className="absolute top-1/2 left-4 -translate-y-1/2"
+        />
+      )}
       <span>{t('col.monitor')}</span>
       <span className="hidden md:block">{t('col.history')}</span>
       <span className="hidden xl:block" />
@@ -256,28 +332,39 @@ function ListHeader() {
 const MonitorRow = memo(function MonitorRow({
   m,
   selected,
+  checked,
+  selectable,
+  selecting,
   now,
-  onOpen,
+  onPick,
+  onToggle,
 }: {
   m: MonitorSummary
   selected: boolean
+  checked: boolean
+  selectable: boolean
+  selecting: boolean
   now: number
-  onOpen: (id: number) => void
+  onPick: (id: number, e: React.MouseEvent) => void
+  onToggle: (id: number, shift: boolean) => void
 }) {
   const { t } = useI18n()
   const status = effectiveStatus(m)
   const paused = status === 'paused'
   return (
+    <div className="relative">
     <button
       type="button"
-      onClick={() => onOpen(m.id)}
-      aria-pressed={selected}
+      onClick={(e) => onPick(m.id, e)}
+      aria-pressed={selectable && selecting ? checked : selected}
       className={cn(
         rowGrid,
-        'hover:bg-accent/50 focus-visible:bg-accent/60 w-full border-b px-4 py-2.5 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
+        selectable ? 'pr-4 pl-11' : 'px-4',
+        'hover:bg-accent/50 focus-visible:bg-accent/60 w-full border-b py-2.5 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
         status === 'down' && 'bg-down/[0.045] hover:bg-down/[0.08]',
         paused && 'text-muted-foreground',
         selected && 'bg-primary/[0.07] hover:bg-primary/10',
+        checked && 'bg-primary/[0.08] hover:bg-primary/[0.11]',
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
@@ -305,6 +392,15 @@ const MonitorRow = memo(function MonitorRow({
       </span>
       <ChevronRight className="text-muted-foreground/60 size-4" />
     </button>
+    {selectable && (
+      <SelectBox
+        checked={checked}
+        label={t('bulk.selectMonitor', { name: m.name })}
+        onToggle={(shift) => onToggle(m.id, shift)}
+        className="absolute top-1/2 left-4 -translate-y-1/2"
+      />
+    )}
+    </div>
   )
 })
 
@@ -372,6 +468,11 @@ export function DashboardPage() {
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
+  const qc = useQueryClient()
+  const [sel, setSel] = useState<Set<number>>(() => new Set())
+  const selRef = useRef(sel)
+  const orderRef = useRef<number[]>([])
+  const anchorRef = useRef<number | null>(null)
   const narrowing = q.trim() !== '' || filter !== null || sslOnly
 
   const setView = (v: View) => {
@@ -451,8 +552,82 @@ export function DashboardPage() {
     return list
   }, [monitors, filtered, lang, t])
 
-  const openMonitor = useCallback((mid: number) => navigate(`/dashboard/${mid}`), [navigate])
   const closeDrawer = useCallback(() => navigate('/dashboard'), [navigate])
+
+  // ---- bulk selection (superadmin only) ----
+  const known = useMemo(() => new Set((monitors ?? []).map((m) => m.id)), [monitors])
+  const selIds = useMemo(() => [...sel].filter((id) => known.has(id)), [sel, known])
+  const selecting = isAdmin && selIds.length > 0
+  const commitSel = useCallback((next: Set<number>) => {
+    selRef.current = next
+    setSel(next)
+  }, [])
+  const toggleSel = useCallback(
+    (id: number, shift: boolean) => {
+      const prev = selRef.current
+      const next = new Set(prev)
+      const o = orderRef.current
+      const a = anchorRef.current === null ? -1 : o.indexOf(anchorRef.current)
+      const b = o.indexOf(id)
+      if (shift && a >= 0 && b >= 0) {
+        const add = !prev.has(id)
+        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+          if (add) next.add(o[i])
+          else next.delete(o[i])
+        }
+      } else if (next.has(id)) next.delete(id)
+      else next.add(id)
+      anchorRef.current = id
+      commitSel(next)
+    },
+    [commitSel],
+  )
+  const setMany = useCallback(
+    (ids: number[], on: boolean) => {
+      const next = new Set(selRef.current)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
+      commitSel(next)
+    },
+    [commitSel],
+  )
+  const clearSel = useCallback(() => {
+    anchorRef.current = null
+    commitSel(new Set())
+  }, [commitSel])
+  const onPick = useCallback(
+    (mid: number, e: React.MouseEvent) => {
+      if (isAdmin && (selecting || e.shiftKey || e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        toggleSel(mid, e.shiftKey)
+      } else navigate(`/dashboard/${mid}`)
+    },
+    [isAdmin, selecting, toggleSel, navigate],
+  )
+  const groupName = useCallback(
+    (gid: number | null) => qc.getQueryData<Group[]>(['groups'])?.find((g) => g.id === gid)?.name ?? '',
+    [qc],
+  )
+  const checkState = (ids: number[]): CheckState => {
+    const n = ids.filter((id) => sel.has(id)).length
+    return n === 0 ? false : n === ids.length ? true : 'indeterminate'
+  }
+
+  // Esc clears the selection (unless a dialog/menu/popover is handling it).
+  useEffect(() => {
+    if (!selecting) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const t = e.target as HTMLElement | null
+      if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"], [role="listbox"]')) return
+      clearSel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selecting, clearSel])
   const toggleFilter = useCallback((s: Eff) => setFilter((f) => (f === s ? null : s)), [])
   const clearFilters = () => {
     setQ('')
@@ -471,18 +646,53 @@ export function DashboardPage() {
     if (selectedId !== null && monitors && !selected) navigate('/dashboard', { replace: true })
   }, [selectedId, monitors, selected, navigate])
 
+  useEffect(() => {
+    const ids: number[] = []
+    if (grouped) {
+      for (const g of grouped) if (narrowing || !collapsed.has(g.key)) ids.push(...g.monitors.map((m) => m.id))
+    } else ids.push(...filtered.map((m) => m.id))
+    orderRef.current = ids
+  }, [grouped, filtered, collapsed, narrowing])
+
   const renderMonitors = (list: MonitorSummary[]) =>
     view === 'grid' ? (
       <div className={gridCls}>
         {list.map((m) => (
-          <MonitorCard key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
+          <MonitorCard
+            key={m.id}
+            m={m}
+            selected={m.id === selectedId}
+            checked={sel.has(m.id)}
+            selectable={isAdmin}
+            selecting={selecting}
+            now={now}
+            onPick={onPick}
+            onToggle={toggleSel}
+          />
         ))}
       </div>
     ) : (
       <div className="bg-card shadow-card rounded-xl border">
-        <ListHeader />
+        <ListHeader
+          selectable={isAdmin}
+          checked={checkState(list.map((m) => m.id))}
+          onToggleAll={() => {
+            const ids = list.map((m) => m.id)
+            setMany(ids, checkState(ids) !== true)
+          }}
+        />
         {list.map((m) => (
-          <MonitorRow key={m.id} m={m} selected={m.id === selectedId} now={now} onOpen={openMonitor} />
+          <MonitorRow
+            key={m.id}
+            m={m}
+            selected={m.id === selectedId}
+            checked={sel.has(m.id)}
+            selectable={isAdmin}
+            selecting={selecting}
+            now={now}
+            onPick={onPick}
+            onToggle={toggleSel}
+          />
         ))}
       </div>
     )
@@ -619,11 +829,23 @@ export function DashboardPage() {
             const totals = groupTotals.get(g.key) ?? { up: 0, total: g.monitors.length, all: g.monitors }
             return (
               <section key={g.key}>
+                <div className="mb-2.5 flex items-center gap-2.5">
+                {isAdmin && (
+                  <SelectBox
+                    checked={checkState(g.monitors.map((m) => m.id))}
+                    label={t('bulk.selectGroup', { group: g.name })}
+                    onToggle={() => {
+                      const ids = g.monitors.map((m) => m.id)
+                      setMany(ids, checkState(ids) !== true)
+                    }}
+                    className="ml-0.5"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => toggleCollapsed(g.key)}
                   aria-expanded={!isCollapsed}
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 mb-2.5 flex w-full items-center gap-2.5 rounded-md py-1 text-xs outline-none focus-visible:ring-[3px]"
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 text-xs outline-none focus-visible:ring-[3px]"
                 >
                   <ChevronRight className={cn('size-3.5 shrink-0 transition-transform duration-150', !isCollapsed && 'rotate-90')} />
                   <span className={cn('size-2 shrink-0 rounded-full', groupDot(totals.all))} />
@@ -632,11 +854,14 @@ export function DashboardPage() {
                   <span className="bg-border h-px flex-1" />
                   <span className="num whitespace-nowrap">{t('dash.groupUp', { up: totals.up, total: totals.total })}</span>
                 </button>
+                </div>
                 {!isCollapsed && renderMonitors(g.monitors)}
               </section>
             )
           })
         : filtered.length > 0 && renderMonitors(filtered)}
+
+      {isAdmin && selIds.length > 0 && <BulkBar ids={selIds} onClear={clearSel} groupName={groupName} />}
 
       {/* Detail drawer (route-driven) */}
       <Sheet open={selected !== undefined} onOpenChange={(o) => !o && closeDrawer()}>

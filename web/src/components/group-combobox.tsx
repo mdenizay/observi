@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronsUpDown, Loader2, Plus, Search } from 'lucide-react'
+import { Check, ChevronsUpDown, Loader2, Plus, Search, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useGroups } from '@/hooks/use-groups'
 import { useI18n } from '@/i18n'
@@ -22,13 +22,24 @@ export function GroupCombobox({
   value,
   onChange,
   fallbackName,
+  actionLabel,
+  actionIcon: ActionIcon,
+  placement = 'bottom',
+  disabled,
 }: {
   id?: string
-  value: string
+  value?: string
   onChange: (v: string) => void
   /** Name to show for the current value while groups are still loading. */
   fallbackName?: string | null
+  /** Action mode: render a button with this label instead of a field; `onChange` fires on pick. */
+  actionLabel?: string
+  actionIcon?: LucideIcon
+  placement?: 'top' | 'bottom'
+  disabled?: boolean
 }) {
+  value = value ?? ''
+  const actionMode = !!actionLabel
   const { t, lang } = useI18n()
   const qc = useQueryClient()
   const groups = useGroups()
@@ -132,11 +143,12 @@ export function GroupCombobox({
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className={cn('relative', actionMode && 'inline-block')}>
       <button
         ref={triggerRef}
         id={id}
         type="button"
+        disabled={disabled}
         role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -148,14 +160,35 @@ export function GroupCombobox({
             setOpen(true)
           }
         }}
-        className="border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px]"
+        aria-label={actionMode ? actionLabel : undefined}
+        className={
+          actionMode
+            ? 'bg-card hover:bg-accent focus-visible:ring-ring/50 inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium shadow-xs transition-colors outline-none focus-visible:ring-[3px] disabled:opacity-50'
+            : 'border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px]'
+        }
       >
-        <span className={cn('truncate', ungrouped && 'text-muted-foreground')}>{triggerLabel}</span>
-        <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+        {actionMode ? (
+          <>
+            {ActionIcon && <ActionIcon className="size-4" />}
+            <span className="max-sm:sr-only">{actionLabel}</span>
+          </>
+        ) : (
+          <>
+            <span className={cn('truncate', ungrouped && 'text-muted-foreground')}>{triggerLabel}</span>
+            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+          </>
+        )}
       </button>
 
       {open && (
-        <div className="bg-popover text-popover-foreground shadow-pop absolute z-50 mt-1.5 w-full min-w-56 overflow-hidden rounded-lg border">
+        <div
+          className={cn(
+            'bg-popover text-popover-foreground shadow-pop absolute z-50 overflow-hidden rounded-lg border',
+            actionMode ? 'w-72 max-w-[calc(100vw-1.5rem)]' : 'w-full min-w-56',
+            placement === 'top' ? 'bottom-full mb-1.5' : 'mt-1.5',
+            actionMode && 'left-0',
+          )}
+        >
           <div className="flex items-center gap-2 border-b px-3">
             <Search className="text-muted-foreground size-4 shrink-0" />
             <input
@@ -180,7 +213,7 @@ export function GroupCombobox({
               <li className="text-muted-foreground px-3 py-6 text-center text-sm">{t('combo.noGroups')}</li>
             )}
             {options.map((o, i) => {
-              const selected = o.kind !== 'create' && (o.id === 'none' ? ungrouped : o.id === value)
+              const selected = !actionMode && o.kind !== 'create' && (o.id === 'none' ? ungrouped : o.id === value)
               return (
                 <li
                   key={`${o.kind}-${o.id}`}

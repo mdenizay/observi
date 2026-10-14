@@ -75,6 +75,7 @@ pub struct BeatEvent {
 pub enum Event {
     Beat(BeatEvent),
     MonitorsChanged,
+    Activity(crate::activity::Activity),
 }
 
 /// A heartbeat queued for the batched DB writer.

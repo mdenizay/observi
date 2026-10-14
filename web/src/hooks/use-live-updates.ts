@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import type { Beat, BeatEvent, Monitor, MonitorSummary } from '@/lib/types'
+import type { Activity, Beat, BeatEvent, Monitor, MonitorSummary } from '@/lib/types'
 
 const MAX_LIST_BEATS = 50
 
@@ -90,6 +90,17 @@ export function useLiveUpdates(enabled: boolean) {
       es.addEventListener('beat', (e) => {
         try {
           applyBeat(qc, JSON.parse((e as MessageEvent).data) as BeatEvent)
+        } catch {
+          /* ignore malformed event */
+        }
+      })
+      es.addEventListener('activity', (e) => {
+        try {
+          const a = JSON.parse((e as MessageEvent).data) as Activity
+          const cached = qc.getQueryData<{ items: Activity[] }>(['activity'])
+          if (!cached) return void qc.invalidateQueries({ queryKey: ['activity'] })
+          if (cached.items.some((x) => x.id === a.id)) return
+          qc.setQueryData(['activity'], { items: [a, ...cached.items].slice(0, 30) })
         } catch {
           /* ignore malformed event */
         }
