@@ -31,6 +31,7 @@ import type {
   SecuritySummary,
   HeatmapData,
   EmailResult,
+  TelegramLink,
 } from './types'
 import type { PublicKeyJSON } from './webauthn'
 
@@ -221,8 +222,13 @@ export const api = {
       group_ids?: number[]
       email?: string
       email_password?: boolean
+      telegram_password?: boolean
     },
   ) => put<EmailResult>(`/users/${id}`, u),
+  telegramStatus: () => get<{ linked: boolean; available: boolean }>('/auth/telegram'),
+  telegramLink: () => post<TelegramLink>('/auth/telegram/link'),
+  telegramUnlink: () => del('/auth/telegram'),
+  userTelegramLink: (id: number) => post<TelegramLink>(`/users/${id}/telegram-link`),
   mailStatus: () => get<{ available: boolean }>('/users/mail-status'),
   deleteUser: (id: number) => del(`/users/${id}`),
 

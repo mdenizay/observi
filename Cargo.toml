@@ -1,6 +1,6 @@
 [package]
 name = "observi"
-version = "0.13.0"
+version = "0.13.1"
 edition = "2024"
 description = "Lightweight self-hosted uptime monitor"
 license = "MIT"

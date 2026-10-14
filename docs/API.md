@@ -112,6 +112,11 @@ A non-admin user sees `monitor_ids` ∪ all monitors of `group_ids`.
 - With `email_password: true` (and an `email` on the user, plus a new password on PUT) the username and password are mailed
   through the default SMTP channel. The response then carries `emailed: true`, or `emailed: false` with `email_error`
   (the user is saved either way). Errors: `email_invalid`, `email_required`, `smtp_not_configured`.
+- **Telegram:** a bot cannot message a phone number, the person has to open the bot once. So accounts are linked with a code:
+  `POST /api/auth/telegram/link` (self) or `POST /api/users/:id/telegram-link` (admin) → `{code, command: "/link <code>", bot, expires_at}`
+  (valid 15 min); the person sends that command to the bot in a private chat. `GET /api/auth/telegram` → `{linked, available}`,
+  `DELETE /api/auth/telegram` unlinks. `GET /api/users` items carry `telegram` (linked). `PUT /api/users/:id` with a new password and
+  `telegram_password: true` sends it to the linked chat (`telegram_sent`, `telegram_error`). Errors: `telegram_not_configured`, `telegram_not_linked`.
 - `DELETE /api/users/:id`
 
 ## Notifications (superadmin)

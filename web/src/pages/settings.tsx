@@ -5,6 +5,7 @@ import { Loader2, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field } from '@/components/field'
+import { TelegramCard } from '@/components/telegram-card'
 import { PasswordField } from '@/components/password-field'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -391,6 +392,7 @@ export function SettingsPage() {
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <AccountCard />
             <LanguageCard />
+            <TelegramCard />
           </div>
         )}
         {tab === 'security' && (

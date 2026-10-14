@@ -207,6 +207,7 @@ export interface MonitorEvent {
 
 export interface ManagedUser extends User {
   email?: string | null
+  telegram?: boolean
   two_factor?: boolean
   passkeys?: number
   last_seen_at?: number | null
@@ -369,4 +370,13 @@ export interface HeatmapData {
 export interface EmailResult {
   emailed?: boolean
   email_error?: string
+  telegram_sent?: boolean
+  telegram_error?: string
+}
+
+export interface TelegramLink {
+  code: string
+  command: string
+  bot: string
+  expires_at: number
 }

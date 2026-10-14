@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
-import { Folder, KeyRound, Link2, Loader2, LogOut, Plus, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Folder, KeyRound, Send, Link2, Loader2, LogOut, Plus, ShieldCheck, ShieldOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Avatar } from '@/components/avatar'
@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { TelegramLinkBox } from '@/components/telegram-link'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { PasswordField } from '@/components/password-field'
@@ -34,7 +35,7 @@ import { GroupChecklist } from '@/components/group-checklist'
 import { useGroups } from '@/hooks/use-groups'
 import { useMonitors } from '@/hooks/use-monitors'
 import { api, errorMessage } from '@/lib/api'
-import type { EmailResult, ManagedUser, Role } from '@/lib/types'
+import type { EmailResult, ManagedUser, Role, TelegramLink } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { richText, useI18n } from '@/i18n'
 
@@ -61,6 +62,15 @@ function UserDialog({
   const [password, setPassword] = useState('')
   const [email, setEmail] = useState(user?.email ?? '')
   const [emailPassword, setEmailPassword] = useState(false)
+  const [tgPassword, setTgPassword] = useState(false)
+  const [tgLink, setTgLink] = useState<TelegramLink | null>(null)
+  const [tgBusy, setTgBusy] = useState(false)
+  const tg = useQuery({ queryKey: ['telegram-link'], queryFn: api.telegramStatus, staleTime: 60_000 })
+  // Same cache as the list; polled while a link code is shown so the dialog notices the link.
+  const usersQ = useQuery({ queryKey: ['users'], queryFn: api.users, refetchInterval: tgLink ? 3000 : false })
+  const tgLinked = usersQ.data?.find((x) => x.id === user?.id)?.telegram ?? user?.telegram ?? false
+  const tgAvailable = tg.data?.available === true
+  const canTelegram = isEdit && tgAvailable && tgLinked && !!password
   const mail = useQuery({ queryKey: ['mail-status'], queryFn: api.mailStatus, staleTime: 60_000 })
   const [role, setRole] = useState<Role>(user?.role ?? 'user')
   const [monitorIds, setMonitorIds] = useState<number[]>(user?.monitor_ids ?? [])
@@ -93,7 +103,7 @@ function UserDialog({
           monitor_ids: monitorIds,
           group_ids: groupIds,
           email: email.trim(),
-          ...(password ? { password, email_password: send } : {}),
+          ...(password ? { password, email_password: send, telegram_password: canTelegram && tgPassword } : {}),
         })
         toast.success(t('users.updated'))
       } else {
@@ -111,6 +121,8 @@ function UserDialog({
       }
       if (res?.emailed === true) toast.success(t('users.emailSent', { email: email.trim() }))
       else if (res?.emailed === false) toast.warning(t('users.emailFailed', { error: res.email_error ?? t('errors.unexpected') }))
+      if (res?.telegram_sent === true) toast.success(t('users.telegramSent'))
+      else if (res?.telegram_sent === false) toast.warning(t('users.telegramFailed', { error: res.telegram_error ?? t('errors.unexpected') }))
       await qc.invalidateQueries({ queryKey: ['users'] })
       if (isSelf) qc.invalidateQueries({ queryKey: ['me'] })
       onOpenChange(false)
@@ -211,6 +223,50 @@ function UserDialog({
                 <p className="text-muted-foreground text-xs">{t('users.emailNeedsPassword')}</p>
               ) : null}
             </div>
+            {isEdit && (
+              <div className="grid gap-1">
+                <label className={cn('flex items-center gap-2.5 text-sm', canTelegram ? 'cursor-pointer' : 'text-muted-foreground cursor-not-allowed')}>
+                  <Checkbox checked={canTelegram && tgPassword} disabled={!canTelegram} onCheckedChange={(v) => setTgPassword(v === true)} />
+                  {t('users.telegramPassword')}
+                </label>
+                {tg.isSuccess && !tgAvailable ? (
+                  <p className="text-muted-foreground text-xs">
+                    {t('tg.unavailable')}{' '}
+                    <Link to="/notifications" className="text-primary underline-offset-4 hover:underline">
+                      {t('users.mailSetup')}
+                    </Link>
+                  </p>
+                ) : tgAvailable && !tgLinked ? (
+                  <div className="grid gap-2">
+                    <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
+                      {t('users.telegramNotLinked')}
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={tgBusy}
+                        onClick={async () => {
+                          setTgBusy(true)
+                          try {
+                            setTgLink(await api.userTelegramLink(user!.id))
+                          } catch (err) {
+                            toast.error(errorMessage(err))
+                          } finally {
+                            setTgBusy(false)
+                          }
+                        }}
+                      >
+                        {tgBusy ? <Loader2 className="animate-spin" /> : <Send />}
+                        {t('users.telegramGetCode')}
+                      </Button>
+                    </p>
+                    {tgLink && <TelegramLinkBox link={tgLink} />}
+                  </div>
+                ) : tgAvailable && tgLinked && !password ? (
+                  <p className="text-muted-foreground text-xs">{t('users.emailNeedsPassword')}</p>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {role === 'user' ? (
@@ -403,6 +459,12 @@ export function UsersPage() {
                     <Badge variant="up" title={t('users.twoFactorOn')}>
                       <ShieldCheck />
                       {t('users.twoFactor')}
+                    </Badge>
+                  )}
+                  {u.telegram && (
+                    <Badge variant="outline" className="text-muted-foreground font-normal" title={t('users.telegramLinked')}>
+                      <Send />
+                      Telegram
                     </Badge>
                   )}
                   {(u.passkeys ?? 0) > 0 && (
