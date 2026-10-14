@@ -117,15 +117,7 @@ fn parse_rfc3339(s: &str) -> Option<i64> {
     let (y, m, day) = (d.next()??, d.next()??, d.next()??);
     let mut t = time.split(':').map(|p| p.split('.').next().and_then(|x| x.parse::<i64>().ok()));
     let (hh, mm, ss) = (t.next()??, t.next()??, t.next()??);
-    // days from civil (Howard Hinnant)
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(((days * 86_400) + hh * 3600 + mm * 60 + ss) * 1000)
+    Some(crate::cert::unix_ms(y, m, day, hh, mm, ss))
 }
 
 impl Updater {

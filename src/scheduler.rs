@@ -90,6 +90,10 @@ fn record_result(state: &AppState, monitor: &Monitor, ok: bool, latency: Option<
     publish(state, monitor.id, beat.clone(), important);
 
     if let Some((s, down_for)) = transition {
+        if s == UP {
+            // Certificates are often renewed together with a fix: re-read soon.
+            crate::cert::recheck_soon(state, monitor.id);
+        }
         let st = state.clone();
         let m = monitor.clone();
         let msg = beat.m.clone().unwrap_or_default();

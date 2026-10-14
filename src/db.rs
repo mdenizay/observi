@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS branding_logo (
     data BLOB NOT NULL,
     updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS certs (
+    monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    issuer TEXT,
+    checked_at INTEGER NOT NULL,
+    alerted_level INTEGER NOT NULL DEFAULT 99
+);
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL

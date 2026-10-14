@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use reqwest::Method;
@@ -20,11 +20,31 @@ const USER_AGENT: &str = concat!("Observi/", env!("CARGO_PKG_VERSION"), " (+upti
 /// disabled so every check measures a fresh DNS + TCP + TLS round trip,
 /// which is what an uptime monitor should report.
 #[derive(Default)]
-pub struct Clients(Mutex<HashMap<(bool, u32), reqwest::Client>>);
+pub struct Clients {
+    clients: Mutex<HashMap<(bool, u32), reqwest::Client>>,
+    probe: OnceLock<reqwest::Client>,
+}
 
 impl Clients {
+    /// Client for reading certificates: accepts any certificate (so an expired
+    /// one can still be inspected) and exposes the peer certificate.
+    pub fn probe_client(&self) -> reqwest::Result<reqwest::Client> {
+        if let Some(c) = self.probe.get() {
+            return Ok(c.clone());
+        }
+        let client = reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(0)
+            .tls_danger_accept_invalid_certs(true)
+            .tls_info(true)
+            .connect_timeout(Duration::from_secs(15))
+            .build()?;
+        Ok(self.probe.get_or_init(|| client).clone())
+    }
+
     fn get(&self, ignore_tls: bool, max_redirects: u32) -> reqwest::Result<reqwest::Client> {
-        let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.clients.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(c) = map.get(&(ignore_tls, max_redirects)) {
             return Ok(c.clone());
         }

@@ -423,6 +423,21 @@ export const en = {
   "upd.started": "Update started",
   "upd.menuEntry": "Update to v{v}",
   "upd.error": "Update error: {error}",
+  "ssl.title": "SSL certificate",
+  "ssl.short": "SSL {n}d",
+  "ssl.expiredShort": "SSL expired",
+  "ssl.tipExpiring": "SSL certificate expires on {date} ({n} days left)",
+  "ssl.tipExpired": "SSL certificate expired on {date}",
+  "ssl.days_one": "{count} day",
+  "ssl.days_other": "{count} days",
+  "ssl.expiredAgo_one": "Expired {count} day ago",
+  "ssl.expiredAgo_other": "Expired {count} days ago",
+  "ssl.validUntil": "Valid until {date}",
+  "ssl.expiredOn": "Expired on {date}",
+  "ssl.issuer": "Issuer: {issuer}",
+  "ssl.checked": "Checked {time}",
+  "ssl.filter": "SSL {count}",
+  "ssl.filterTip": "Show monitors whose SSL certificate is expiring or expired",
 }
 
 export type Dict = typeof en

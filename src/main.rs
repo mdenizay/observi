@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod brand;
+mod cert;
 mod check;
 mod db;
 mod i18n;
@@ -198,6 +199,7 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
         .build()?;
     rt.block_on(async move {
         let live = db.call(|c| scheduler::load_live(c)).await?;
+        let certs = db.call(|c| cert::load(c)).await.unwrap_or_default();
         let (events, _) = broadcast::channel(1024);
         let (writer_tx, writer_rx) = mpsc::channel(4096);
         let state = AppState {
@@ -214,12 +216,14 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
             clients: Arc::default(),
             shutdown: Arc::new(watch::channel(false).0),
             updater: Arc::new(update::Updater::new(db_path)),
+            certs: Arc::new(RwLock::new(certs)),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);
         let writer = tokio::spawn(scheduler::writer(state.clone(), writer_rx, state.shutdown.subscribe()));
         tokio::spawn(scheduler::maintenance(state.clone(), retention));
         tokio::spawn(update::run(state.clone()));
+        tokio::spawn(cert::run(state.clone()));
         scheduler::start_all(&state).await?;
 
         let app = Router::new()

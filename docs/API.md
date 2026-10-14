@@ -63,6 +63,15 @@ type MonitorInput = {
 }
 
 type Monitor = MonitorSummary & MonitorInput
+
+// HTTPS monitors also carry the TLS certificate state (null for other types / before the first probe):
+type Cert = {
+  expires_at: number;   // ms
+  days_left: number;    // integer, negative once expired
+  status: "ok" | "expiring" | "expired";   // expiring = 14 days or less
+  issuer: string | null; checked_at: number;
+}
+// MonitorSummary.cert: Cert | null
 ```
 
 ## Live updates

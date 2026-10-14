@@ -38,7 +38,7 @@ export function formatLatency(v: number | null | undefined): string {
 }
 
 const dtCache = new Map<string, Intl.DateTimeFormat>()
-function dtf(kind: 'full' | 'time' | 'day') {
+function dtf(kind: 'full' | 'time' | 'day' | 'date') {
   const lang = getLang()
   const key = `${lang}:${kind}`
   let f = dtCache.get(key)
@@ -55,7 +55,9 @@ function dtf(kind: 'full' | 'time' | 'day') {
           }
         : kind === 'time'
           ? { hour: '2-digit', minute: '2-digit' }
-          : { day: '2-digit', month: 'short' }
+          : kind === 'date'
+            ? { day: '2-digit', month: lang === 'tr' ? '2-digit' : 'short', year: 'numeric' }
+            : { day: '2-digit', month: 'short' }
     f = new Intl.DateTimeFormat(lang, opts)
     dtCache.set(key, f)
   }
@@ -65,6 +67,7 @@ function dtf(kind: 'full' | 'time' | 'day') {
 export const formatDateTime = (t: number) => dtf('full').format(t)
 export const formatTime = (t: number) => dtf('time').format(t)
 export const formatDay = (t: number) => dtf('day').format(t)
+export const formatDate = (t: number) => dtf('date').format(t)
 
 const rtfCache = new Map<string, Intl.RelativeTimeFormat>()
 export function formatRelative(t: number, now = Date.now()): string {

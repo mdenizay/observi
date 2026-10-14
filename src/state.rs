@@ -98,6 +98,8 @@ pub struct AppState {
     /// Flips to true on shutdown so long-lived SSE streams end and the server can drain.
     pub shutdown: Arc<watch::Sender<bool>>,
     pub updater: Arc<crate::update::Updater>,
+    /// TLS certificate expiry per HTTPS monitor.
+    pub certs: Arc<RwLock<crate::cert::Certs>>,
 }
 
 impl AppState {

@@ -22,6 +22,7 @@ import { richText, useI18n } from '@/i18n'
 import { api, errorMessage } from '@/lib/api'
 import {
   formatDateTime,
+  formatDate,
   formatDay,
   formatDuration,
   formatLatency,
@@ -30,7 +31,7 @@ import {
   monitorTarget,
 } from '@/lib/format'
 import { translateMessage } from '@/lib/messages'
-import type { Beat, MonitorEvent, MonitorSummary } from '@/lib/types'
+import type { Beat, CertInfo, MonitorEvent, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const ranges = [
@@ -52,16 +53,73 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   )
 }
 
-function Kpi({ label, value, loading }: { label: string; value: string; loading?: boolean }) {
+function Kpi({
+  label,
+  value,
+  loading,
+  tone,
+  sub,
+  title,
+}: {
+  label: string
+  value: string
+  loading?: boolean
+  tone?: 'warn' | 'bad'
+  sub?: React.ReactNode
+  title?: string
+}) {
   return (
-    <div className="bg-card shadow-card min-w-0 rounded-xl border px-3.5 py-3">
+    <div
+      title={title}
+      className={cn(
+        'bg-card shadow-card min-w-0 rounded-xl border px-3.5 py-3',
+        tone === 'warn' && 'border-pending/40 bg-pending/[0.05]',
+        tone === 'bad' && 'border-down/40 bg-down/[0.05]',
+      )}
+    >
       <div className="text-muted-foreground truncate text-xs">{label}</div>
       {loading ? (
         <Skeleton className="mt-1.5 h-6 w-16" />
       ) : (
-        <div className="num mt-1 truncate text-lg font-semibold">{value}</div>
+        <div className={cn('num mt-1 truncate text-lg font-semibold', tone === 'warn' && 'text-pending', tone === 'bad' && 'text-down')}>
+          {value}
+        </div>
       )}
+      {sub}
     </div>
+  )
+}
+
+/** SSL certificate KPI (only for monitors that have certificate info). */
+function CertKpi({ cert, now }: { cert: CertInfo; now: number }) {
+  const { t } = useI18n()
+  const date = formatDate(cert.expires_at)
+  const expired = cert.status === 'expired'
+  const value = expired
+    ? t('ssl.expiredAgo', { count: Math.max(0, Math.abs(cert.days_left)) })
+    : t('ssl.days', { count: cert.days_left })
+  const tone = expired ? 'bad' : cert.status === 'expiring' ? 'warn' : undefined
+  const details = [
+    cert.issuer ? t('ssl.issuer', { issuer: cert.issuer }) : null,
+    t('ssl.checked', { time: formatRelative(cert.checked_at, now) }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <Kpi
+      label={t('ssl.title')}
+      value={value}
+      tone={tone}
+      title={details}
+      sub={
+        <div className="mt-0.5 min-w-0">
+          <div className={cn('truncate text-xs', tone === 'bad' ? 'text-down' : tone === 'warn' ? 'text-pending' : 'text-muted-foreground')}>
+            {expired ? t('ssl.expiredOn', { date }) : t('ssl.validUntil', { date })}
+          </div>
+          <div className="text-muted-foreground/80 truncate text-[11px]" title={details}>{details}</div>
+        </div>
+      }
+    />
   )
 }
 
@@ -170,7 +228,7 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
       ) : incidents.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t('detail.noIncidents')}</p>
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid grid-cols-1 gap-2">
           {incidents.map((inc) => {
             const ongoing = inc.end === null && currentlyDown
             const duration = formatDuration((inc.end ?? now) - inc.start)
@@ -178,7 +236,7 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
               <li
                 key={inc.start}
                 className={cn(
-                  'flex items-start gap-3 rounded-lg border px-3 py-2.5',
+                  'flex min-w-0 items-start gap-3 rounded-lg border px-3 py-2.5',
                   ongoing ? 'border-down/35 bg-down/[0.06]' : 'bg-muted/30',
                 )}
               >
@@ -194,10 +252,10 @@ function Incidents({ events, loading, now, currentlyDown }: { events: MonitorEve
                       {ongoing ? t('detail.ongoing') : t('detail.resolved')}
                     </Badge>
                   </div>
-                  <div className="text-muted-foreground mt-0.5 text-xs">
+                  <div className="text-muted-foreground mt-0.5 min-w-0 text-xs">
                     {ongoing ? t('detail.downFor', { duration }) : t('detail.lasted', { duration })}
                     {inc.message && (
-                      <span className="text-foreground/80 mt-0.5 block truncate" title={translateMessage(inc.message, lang)}>
+                      <span className="text-foreground/80 mt-0.5 block min-w-0 [overflow-wrap:anywhere]">
                         {translateMessage(inc.message, lang)}
                       </span>
                     )}
@@ -281,7 +339,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4 sm:p-5">
+    <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-5 [&>*]:min-w-0">
       {/* Header */}
       <header className="pr-10">
         <div className="flex flex-wrap items-center gap-2">
@@ -312,7 +370,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
           </div>
         )}
         {detail.data?.description && (
-          <p className="text-muted-foreground mt-2 text-sm whitespace-pre-wrap">{detail.data.description}</p>
+          <p className="text-muted-foreground mt-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap">{detail.data.description}</p>
         )}
       </header>
 
@@ -365,7 +423,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
             {t('detail.every', { n: m.interval })}
           </span>
           {m.message && status !== 'up' && (
-            <span className={cn('min-w-0 truncate', status === 'down' && 'text-down')} title={translateMessage(m.message, lang)}>
+            <span className={cn('min-w-0 max-w-full [overflow-wrap:anywhere]', status === 'down' && 'text-down')}>
               {translateMessage(m.message, lang)}
             </span>
           )}
@@ -378,6 +436,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
           <Kpi label={t('detail.kpiCurrent')} value={formatLatency(m.latency_ms)} />
           <Kpi label={t('detail.kpiAvg')} value={formatLatency(stats.data?.avg_latency_24h)} loading={stats.isPending} />
         </div>
+        {m.cert && <CertKpi cert={m.cert} now={now} />}
         <div className="grid grid-cols-3 gap-2">
           <Kpi label={t('detail.kpiUptime', { range: t('range.24h.short') })} value={formatUptime(stats.data?.uptime_24h)} loading={stats.isPending} />
           <Kpi label={t('detail.kpiUptime', { range: t('range.7d.short') })} value={formatUptime(stats.data?.uptime_7d)} loading={stats.isPending} />

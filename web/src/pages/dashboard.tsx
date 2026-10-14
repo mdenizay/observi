@@ -7,9 +7,11 @@ import {
   Clock,
   LayoutGrid,
   List,
+  Lock,
   PauseCircle,
   Plus,
   Search,
+  ShieldAlert,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -17,6 +19,8 @@ import { EmptyState } from '@/components/empty-state'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
 import { MonitorDetail } from '@/components/monitor-detail'
 import { Sparkline } from '@/components/sparkline'
+import { SslBadge } from '@/components/ssl-badge'
+import { certNeedsAttention } from '@/lib/cert'
 import { StatusBadge, statusDot } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -139,6 +143,7 @@ const MonitorCard = memo(function MonitorCard({
       <div className="flex items-center gap-2.5">
         <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
+        <SslBadge cert={m.cert} className="max-w-[7.5rem]" />
         <StatusBadge status={status} className="shrink-0" />
       </div>
       <div className="text-muted-foreground -mt-1.5 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
@@ -229,7 +234,10 @@ const MonitorRow = memo(function MonitorRow({
       <div className="flex min-w-0 items-center gap-3">
         <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} title={t(`status.${status}` as const)} />
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium">{m.name}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium">{m.name}</span>
+            <SslBadge cert={m.cert} className="max-w-[7rem]" />
+          </div>
           <div className="text-muted-foreground truncate text-xs">{monitorTarget(m) || '—'}</div>
         </div>
       </div>
@@ -311,10 +319,11 @@ export function DashboardPage() {
   const now = useNow(30_000)
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Eff | null>(null)
+  const [sslOnly, setSslOnly] = useState(false)
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
-  const narrowing = q.trim() !== '' || filter !== null
+  const narrowing = q.trim() !== '' || filter !== null || sslOnly
 
   const setView = (v: View) => {
     setViewState(v)
@@ -324,6 +333,9 @@ export function DashboardPage() {
       /* storage unavailable */
     }
   }
+
+  const sslCount = useMemo(() => (monitors ?? []).filter((m) => certNeedsAttention(m.cert)).length, [monitors])
+  const sslExpired = useMemo(() => (monitors ?? []).some((m) => m.cert?.status === 'expired'), [monitors])
 
   const counts = useMemo(() => {
     const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0 }
@@ -350,6 +362,7 @@ export function DashboardPage() {
     const byName = (a: MonitorSummary, b: MonitorSummary) => a.name.localeCompare(b.name, lang)
     return (monitors ?? [])
       .filter((m) => filter === null || effectiveStatus(m) === filter)
+      .filter((m) => !sslOnly || certNeedsAttention(m.cert))
       .filter(
         (m) =>
           !term ||
@@ -365,7 +378,7 @@ export function DashboardPage() {
         }
         return statusOrder[effectiveStatus(a)] - statusOrder[effectiveStatus(b)] || byName(a, b)
       })
-  }, [monitors, q, filter, sort, lang])
+  }, [monitors, q, filter, sslOnly, sort, lang])
 
   // null = no groups at all → flat layout without headers.
   const grouped = useMemo<MonitorGroupView[] | null>(() => {
@@ -395,6 +408,7 @@ export function DashboardPage() {
   const clearFilters = () => {
     setQ('')
     setFilter(null)
+    setSslOnly(false)
   }
 
   const selected = monitors?.find((m) => m.id === selectedId)
@@ -468,7 +482,23 @@ export function DashboardPage() {
             <Kbd className="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 sm:inline-flex">/</Kbd>
           )}
         </div>
-        <div className="flex flex-1 items-center justify-end gap-2">
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          {(sslCount > 0 || sslOnly) && (
+            <button
+              type="button"
+              aria-pressed={sslOnly}
+              onClick={() => setSslOnly((v) => !v)}
+              title={t('ssl.filterTip')}
+              className={cn(
+                'num focus-visible:ring-ring/50 inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px]',
+                sslExpired ? 'border-down/30 bg-down/10 text-down' : 'border-pending/35 bg-pending/12 text-pending',
+                sslOnly && (sslExpired ? 'ring-down/50 ring-2' : 'ring-pending/60 ring-2'),
+              )}
+            >
+              {sslExpired ? <ShieldAlert className="size-3.5" /> : <Lock className="size-3.5" />}
+              {t('ssl.filter', { count: sslCount })}
+            </button>
+          )}
           <label className="flex items-center gap-2">
             <span className="text-muted-foreground text-xs">{t('dash.sort')}</span>
             <select
@@ -574,7 +604,7 @@ export function DashboardPage() {
         <SheetContent side="right" className="bg-background w-full max-w-none gap-0 p-0 sm:max-w-xl 2xl:max-w-2xl">
           <SheetTitle className="sr-only">{t('dash.drawerTitle')}</SheetTitle>
           <SheetDescription className="sr-only">{t('dash.drawerDesc')}</SheetDescription>
-          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
             {drawerMonitor && <MonitorDetail key={drawerMonitor.id} monitor={drawerMonitor} />}
           </div>
         </SheetContent>

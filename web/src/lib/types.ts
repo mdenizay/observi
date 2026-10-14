@@ -32,9 +32,21 @@ export interface MonitorSummary {
   last_check: number | null
   message: string | null
   uptime_24h: number | null
+  cert: CertInfo | null
   group_id: number | null
   group_name: string | null
   beats: Beat[]
+}
+
+export interface CertInfo {
+  /** Expiry time in ms. */
+  expires_at: number
+  /** Whole days left; negative once expired. */
+  days_left: number
+  status: 'ok' | 'expiring' | 'expired'
+  issuer: string | null
+  /** Last probe time in ms. */
+  checked_at: number
 }
 
 export interface MonitorInput {

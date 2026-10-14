@@ -284,10 +284,21 @@ fn summary_json(st: &AppState, m: &Monitor, groups: &GroupNames, beats: usize) -
         "last_check": l.and_then(|l| l.last_check),
         "message": l.and_then(|l| l.message.clone()),
         "uptime_24h": uptime,
+        "cert": state_cert(st, m.id),
         "group_id": m.cfg.group_id,
         "group_name": m.cfg.group_id.and_then(|g| groups.get(&g)),
         "beats": recent,
     })
+}
+
+fn state_cert(st: &AppState, id: i64) -> Value {
+    let now = now_ms();
+    st.certs
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
+        .map(|c| c.to_json(now))
+        .unwrap_or(Value::Null)
 }
 
 type GroupNames = std::collections::HashMap<i64, String>;

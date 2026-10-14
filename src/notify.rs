@@ -185,17 +185,6 @@ fn human_duration(ms: i64) -> String {
 
 /// Called by the scheduler on an UP<->DOWN transition.
 pub async fn monitor_changed(state: &AppState, m: &Monitor, status: u8, message: &str, down_for: Option<i64>) {
-    let id = m.id;
-    let channels = match state.db.call(move |c| for_monitor(c, id)).await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("load notifications: {e:#}");
-            return;
-        }
-    };
-    if channels.is_empty() {
-        return;
-    }
     let up = status == UP;
     let target = match m.cfg.kind {
         MonitorType::Tcp => format!(
@@ -222,8 +211,20 @@ pub async fn monitor_changed(state: &AppState, m: &Monitor, status: u8, message:
         up,
         monitor: Some(json!({ "id": m.id, "name": m.cfg.name, "target": target })),
     };
+    deliver(state, m.id, &alert).await;
+}
+
+/// Send an alert through every notification channel attached to a monitor.
+pub async fn deliver(state: &AppState, monitor_id: i64, alert: &Alert) {
+    let channels = match state.db.call(move |c| for_monitor(c, monitor_id)).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("load notifications: {e:#}");
+            return;
+        }
+    };
     for ch in channels {
-        if let Err(e) = send(state, &ch, &alert).await {
+        if let Err(e) = send(state, &ch, alert).await {
             tracing::warn!("notification failed ({}): {e:#}", ch.kind());
         }
     }
