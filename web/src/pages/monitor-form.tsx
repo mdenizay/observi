@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { api, errorMessage } from '@/lib/api'
 import type { Monitor, MonitorInput, MonitorType } from '@/lib/types'
 import { kindIcon } from '@/components/kind-icon'
-import { useGroups } from '@/hooks/use-groups'
+import { GroupCombobox } from '@/components/group-combobox'
 import { cn } from '@/lib/utils'
 import { translate, useI18n } from '@/i18n'
 
@@ -192,7 +192,6 @@ export function MonitorFormPage() {
     enabled: isEdit,
   })
   const notifications = useQuery({ queryKey: ['notifications'], queryFn: api.notifications })
-  const groups = useGroups()
 
   const [form, setForm] = useState<FormState>(defaults)
   const [errors, setErrors] = useState<Errors>({})
@@ -410,23 +409,7 @@ export function MonitorFormPage() {
                 )}
 
                 <Field label={t('mf.group')} htmlFor="group" className="sm:col-span-2">
-                  <Select value={form.group_id} onValueChange={(v) => set('group_id', v)}>
-                    <SelectTrigger id="group">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_GROUP}>{t('dash.ungrouped')}</SelectItem>
-                      {groups.data?.map((g) => (
-                        <SelectItem key={g.id} value={String(g.id)}>
-                          {g.name}
-                        </SelectItem>
-                      ))}
-                      {/* keep current value selectable while groups load */}
-                      {form.group_id !== NO_GROUP && !groups.data?.some((g) => String(g.id) === form.group_id) && (
-                        <SelectItem value={form.group_id}>{monitor.data?.group_name ?? t('dash.groupFallback', { id: form.group_id })}</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <GroupCombobox id="group" value={form.group_id} onChange={(v) => set('group_id', v)} fallbackName={monitor.data?.group_name} />
                 </Field>
 
                 <Field label={t('mf.description')} htmlFor="description" className="sm:col-span-2">

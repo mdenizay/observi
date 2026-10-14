@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useBrand } from '@/hooks/use-brand'
 import { useNow } from '@/hooks/use-now'
-import { BUILD_VERSION, updateKey, useApplyUpdate, useFollowServerUpdate, useUpdateInfo } from '@/hooks/use-update'
+import { BUILD_VERSION, releasesKey, updateKey, useApplyUpdate, useFollowServerUpdate, useUpdateInfo } from '@/hooks/use-update'
 import { useI18n } from '@/i18n'
 import { api, errorMessage } from '@/lib/api'
 import { formatDateTime, formatRelative } from '@/lib/format'
@@ -44,6 +44,11 @@ export function UpdatesCard() {
     setChecking(true)
     try {
       set(await api.updateCheck())
+      // Also refresh the release notes (bypasses the server cache).
+      api
+        .releases(true)
+        .then((r) => qc.setQueryData(releasesKey, r))
+        .catch(() => {})
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -178,15 +183,6 @@ export function UpdatesCard() {
               </div>
             )}
             {info.mode === 'manual' && <p className="text-muted-foreground text-sm">{t('upd.manualHelp')}</p>}
-
-            {info.available && info.notes && (
-              <div className="grid gap-1.5">
-                <span className="text-sm font-medium">{t('upd.notes')}</span>
-                <div className="bg-muted/40 scrollbar-thin max-h-56 overflow-y-auto rounded-lg border p-3 text-[13px] leading-relaxed whitespace-pre-wrap">
-                  {info.notes}
-                </div>
-              </div>
-            )}
 
             <Field label={t('upd.auto')} hint={t('upd.autoHelp')} className="gap-2">
               <div className="flex items-center gap-3">

@@ -60,6 +60,7 @@ struct Inner {
 
 pub struct Updater {
     inner: RwLock<Inner>,
+    history: RwLock<Option<(i64, Vec<ReleaseInfo>)>>,
     mode: Mode,
     repo: String,
     data_dir: PathBuf,
@@ -90,6 +91,21 @@ pub struct Status {
     error: Option<String>,
     last_result: Option<UpdateResult>,
 }
+
+/// One published release, as shown in the release history.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReleaseInfo {
+    pub version: String,
+    pub name: String,
+    pub published_at: Option<i64>,
+    pub notes: Option<String>,
+    pub url: String,
+    pub is_current: bool,
+    pub is_newer: bool,
+}
+
+const HISTORY_TTL_MS: i64 = 3600 * 1000;
+const HISTORY_LEN: usize = 15;
 
 pub fn repo() -> String {
     std::env::var("OBSERVI_UPDATE_REPO").unwrap_or_else(|_| "mdenizay/observi".into())
@@ -134,6 +150,7 @@ impl Updater {
             .unwrap_or_else(|| PathBuf::from("."));
         Updater {
             inner: RwLock::new(Inner { latest: None, checked_at: None, phase: Phase::Idle, error: None }),
+            history: RwLock::new(None),
             mode,
             repo: repo(),
             data_dir,
@@ -168,6 +185,20 @@ impl Updater {
             error: inner.error.clone(),
             last_result: self.last_result(),
         }
+    }
+
+    /// Release history (newest first), cached for an hour unless `refresh` is set.
+    pub async fn releases(&self, http: &reqwest::Client, refresh: bool) -> Result<(i64, Vec<ReleaseInfo>)> {
+        let now = now_ms();
+        if !refresh
+            && let Some((at, list)) = self.history.read().unwrap_or_else(|e| e.into_inner()).as_ref()
+            && now - *at < HISTORY_TTL_MS
+        {
+            return Ok((*at, list.clone()));
+        }
+        let list = fetch_history(http, &self.repo).await?;
+        *self.history.write().unwrap_or_else(|e| e.into_inner()) = Some((now, list.clone()));
+        Ok((now, list))
     }
 
     fn set_phase(&self, phase: Phase, error: Option<String>) {
@@ -284,9 +315,45 @@ struct GhRelease {
     published_at: Option<String>,
     body: Option<String>,
     #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
     draft: bool,
     #[serde(default)]
     prerelease: bool,
+}
+
+async fn fetch_history(http: &reqwest::Client, repo: &str) -> Result<Vec<ReleaseInfo>> {
+    let url = format!("https://api.github.com/repos/{repo}/releases?per_page=30");
+    let resp = http
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .context("could not reach GitHub")?;
+    if !resp.status().is_success() {
+        bail!("GitHub returned HTTP {}", resp.status().as_u16());
+    }
+    let all: Vec<GhRelease> = resp.json().await.context("unexpected GitHub response")?;
+    let mut out: Vec<ReleaseInfo> = all
+        .into_iter()
+        .filter(|r| !r.draft && !r.prerelease && parse_version(&r.tag_name).is_some())
+        .map(|r| {
+            let version = r.tag_name.trim_start_matches('v').to_string();
+            ReleaseInfo {
+                is_current: version == CURRENT,
+                is_newer: is_newer(&version, CURRENT),
+                name: r.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| r.tag_name.clone()),
+                version,
+                published_at: r.published_at.as_deref().and_then(parse_rfc3339),
+                notes: r.body.map(|b| b.chars().take(8000).collect::<String>()).filter(|b| !b.trim().is_empty()),
+                url: r.html_url,
+            }
+        })
+        .collect();
+    out.sort_by_key(|r| std::cmp::Reverse(parse_version(&r.version)));
+    out.truncate(HISTORY_LEN);
+    Ok(out)
 }
 
 async fn fetch_latest(http: &reqwest::Client, repo: &str) -> Result<Release> {

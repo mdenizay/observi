@@ -1,9 +1,8 @@
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowUpCircle, BookOpen, ChevronsUpDown, ExternalLink, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
+import { ArrowUpCircle, BookOpen, ChevronsUpDown, ExternalLink, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { toast } from 'sonner'
 import { Avatar } from '@/components/avatar'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,27 +82,33 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
       <DropdownMenuContent
         side={compact ? 'bottom' : 'top'}
         align={compact ? 'end' : 'start'}
-        className="w-64 max-w-[calc(100vw-1.5rem)]"
+        className="w-64 max-w-[calc(100vw-1.5rem)] min-w-60"
       >
-        <div className="flex items-center gap-2.5 px-2 py-2">
-          <Avatar name={display} className="size-9" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{display}</div>
-            <div className="text-muted-foreground truncate text-xs">@{user.username}</div>
-            <div className="text-muted-foreground/70 num mt-0.5 text-[11px]">{t('user.version', { v: BUILD_VERSION })}</div>
-          </div>
-          <Badge variant={isAdmin ? 'default' : 'secondary'} className="shrink-0">
-            {role}
-          </Badge>
+        <div className="text-muted-foreground flex items-center justify-between gap-3 px-2 pt-1 pb-1.5 text-xs">
+          <span className="min-w-0 truncate">@{user.username}</span>
+          <span className="num shrink-0">v{BUILD_VERSION}</span>
         </div>
         <DropdownMenuSeparator />
 
-        <div className="flex items-center justify-between gap-3 px-2 py-1.5">
+        {hasUpdate && (
+          <DropdownMenuItem
+            className="text-up focus:text-up h-9"
+            onSelect={() => {
+              onNavigate?.()
+              navigate('/settings#updates')
+            }}
+          >
+            <ArrowUpCircle />
+            <span className="truncate">{t('upd.menuEntry', { v: update!.latest! })}</span>
+          </DropdownMenuItem>
+        )}
+
+        <div className="flex h-9 items-center justify-between gap-3 px-2">
           <span className="text-muted-foreground text-xs font-medium">{t('lang.label')}</span>
           <DropdownMenuRadioGroup
             value={lang}
             onValueChange={(v) => setLang(v as Lang)}
-            className="bg-muted flex w-40 gap-0.5 rounded-md p-0.5"
+            className="bg-muted flex w-36 gap-0.5 rounded-md p-0.5"
           >
             {LANGS.map((l) => (
               <DropdownMenuSegment key={l.code} value={l.code}>
@@ -112,12 +117,12 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
             ))}
           </DropdownMenuRadioGroup>
         </div>
-        <div className="flex items-center justify-between gap-3 px-2 py-1.5">
+        <div className="flex h-9 items-center justify-between gap-3 px-2">
           <span className="text-muted-foreground text-xs font-medium">{t('theme.label')}</span>
           <DropdownMenuRadioGroup
             value={mode}
             onValueChange={(v) => setMode(v as ThemeMode)}
-            className="bg-muted flex w-40 gap-0.5 rounded-md p-0.5"
+            className="bg-muted flex w-36 gap-0.5 rounded-md p-0.5"
           >
             <DropdownMenuSegment value="light" aria-label={t('theme.light')} title={t('theme.light')}>
               <Sun />
@@ -135,35 +140,14 @@ export function UserMenu({ compact = false, onNavigate }: { compact?: boolean; o
         </div>
 
         <DropdownMenuSeparator />
-        {hasUpdate && (
-          <DropdownMenuItem
-            className="text-up focus:text-up"
-            onSelect={() => {
-              onNavigate?.()
-              navigate('/settings#updates')
-            }}
-          >
-            <ArrowUpCircle />
-            {t('upd.menuEntry', { v: update!.latest! })}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem
-          onSelect={() => {
-            onNavigate?.()
-            navigate('/settings')
-          }}
-        >
-          <Settings />
-          {t('nav.settings')}
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="h-9">
           <a href="https://github.com/mdenizay/observi" target="_blank" rel="noreferrer noopener">
             <BookOpen />
             <span className="flex-1">{t('nav.docs')}</span>
             <ExternalLink className="size-3.5 opacity-60" />
           </a>
         </DropdownMenuItem>
-        <DropdownMenuItem destructive onSelect={logout}>
+        <DropdownMenuItem destructive onSelect={logout} className="h-9">
           <LogOut />
           {t('nav.signOut')}
         </DropdownMenuItem>

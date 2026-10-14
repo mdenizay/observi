@@ -26,10 +26,13 @@ const monitoring: NavItem[] = [
   { to: '/dashboard', labelKey: 'nav.dashboard', icon: House },
   { to: '/monitors/new', labelKey: 'nav.newMonitor', icon: Plus, end: true },
 ]
+const settingsItem: NavItem = { to: '/settings', labelKey: 'nav.settings', icon: Settings }
+// Superadmins: Settings closes the Administration group; regular users: it sits under Monitoring.
 const admin: NavItem[] = [
   { to: '/groups', labelKey: 'nav.groups', icon: Folder },
   { to: '/users', labelKey: 'nav.users', icon: Users },
   { to: '/notifications', labelKey: 'nav.notifications', icon: Bell },
+  settingsItem,
 ]
 
 function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
@@ -73,11 +76,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Logo onNavigate={onNavigate} />
       </div>
       <nav className="scrollbar-thin flex flex-1 flex-col overflow-y-auto px-2.5 pb-2">
-        {section(t('nav.section.monitoring'), isAdmin ? monitoring : monitoring.slice(0, 1))}
+        {section(t('nav.section.monitoring'), isAdmin ? monitoring : [monitoring[0], settingsItem])}
         {isAdmin && section(t('nav.section.admin'), admin)}
-        <div className="mt-auto pt-4">
-          <NavItemLink item={{ to: '/settings', labelKey: 'nav.settings', icon: Settings }} onNavigate={onNavigate} />
-        </div>
       </nav>
       {isAdmin && <UpdateNotice onNavigate={onNavigate} />}
       <div className="border-t p-2">

@@ -8,6 +8,7 @@ import type { UpdateInfo } from '@/lib/types'
 
 export const BUILD_VERSION = __APP_VERSION__
 export const updateKey = ['update'] as const
+export const releasesKey = ['releases'] as const
 
 /** Update status (superadmin only): polled every 10 min and on window focus. */
 export function useUpdateInfo() {

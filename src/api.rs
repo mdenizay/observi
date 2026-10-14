@@ -79,6 +79,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
         .route("/auth/password", post(change_password))
+        .route("/auth/profile", put(update_profile))
         .route("/monitors", get(list_monitors).post(create_monitor))
         .route("/monitors/{id}", get(get_monitor).put(update_monitor).delete(delete_monitor))
         .route("/monitors/{id}/pause", post(pause_monitor))
@@ -90,6 +91,7 @@ pub fn router() -> Router<AppState> {
         .route("/version", get(version))
         .route("/update", get(update_status))
         .route("/update/check", post(update_check))
+        .route("/update/releases", get(update_releases))
         .route("/update/apply", post(update_apply))
         .route("/update/settings", put(update_settings))
         .route("/branding", get(get_branding).put(put_branding))
@@ -210,6 +212,30 @@ async fn me(AuthUser(user): AuthUser) -> Json<User> {
 struct PasswordReq {
     current: String,
     new: String,
+}
+
+#[derive(Deserialize)]
+struct ProfileReq {
+    name: String,
+}
+
+async fn update_profile(
+    State(st): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(req): Json<ProfileReq>,
+) -> ApiResult<Json<User>> {
+    let name = req.name.trim().to_string();
+    if name.is_empty() {
+        return Err(bad("name_required", "Name is required"));
+    }
+    if name.chars().count() > 80 {
+        return Err(bad("name_too_long", "Name is too long (max 80 characters)"));
+    }
+    let n = name.clone();
+    st.db
+        .call(move |c| Ok(c.execute("UPDATE users SET name = ? WHERE id = ?", rusqlite::params![n, user.id])?))
+        .await?;
+    Ok(Json(User { name, ..user }))
 }
 
 async fn change_password(
@@ -674,6 +700,25 @@ async fn update_apply(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<
         bad(code, msg)
     })?;
     update_json(&st).await
+}
+
+#[derive(Deserialize)]
+struct ReleasesQuery {
+    refresh: Option<String>,
+}
+
+async fn update_releases(
+    State(st): State<AppState>,
+    Admin(_): Admin,
+    Query(q): Query<ReleasesQuery>,
+) -> ApiResult<Json<Value>> {
+    let refresh = matches!(q.refresh.as_deref(), Some("1" | "true"));
+    let (fetched_at, releases) = st
+        .updater
+        .releases(&st.http, refresh)
+        .await
+        .map_err(|e| bad("update_check_failed", format!("{e:#}")))?;
+    Ok(Json(json!({ "releases": releases, "fetched_at": fetched_at })))
 }
 
 #[derive(Deserialize)]

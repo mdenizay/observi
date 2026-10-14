@@ -12,6 +12,7 @@ import type {
   Notification,
   NotificationInput,
   Role,
+  ReleasesResponse,
   UpdateInfo,
   User,
 } from './types'
@@ -137,6 +138,8 @@ export const api = {
   deleteLogo: () => del<Brand>('/branding/logo'),
 
   version: () => get<{ version: string }>('/version', { silent401: true }),
+  updateProfile: (name: string) => put<User>('/auth/profile', { name }),
+  releases: (refresh = false) => get<ReleasesResponse>(`/update/releases${refresh ? '?refresh=1' : ''}`),
   updateInfo: () => get<UpdateInfo>('/update'),
   updateCheck: () => post<UpdateInfo>('/update/check'),
   updateApply: () => post<UpdateInfo>('/update/apply'),

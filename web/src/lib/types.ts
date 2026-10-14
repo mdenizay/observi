@@ -139,6 +139,21 @@ export interface BeatEvent {
   status: MonitorStatus
 }
 
+export interface ReleaseInfo {
+  version: string
+  name: string
+  published_at: number | null
+  notes: string | null
+  url: string
+  is_current: boolean
+  is_newer: boolean
+}
+
+export interface ReleasesResponse {
+  releases: ReleaseInfo[]
+  fetched_at: number
+}
+
 export interface UpdateInfo {
   current: string
   latest: string | null

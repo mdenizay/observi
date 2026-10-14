@@ -72,6 +72,9 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -80,10 +83,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          .github/scripts/release-notes.sh "${{ github.ref_name }}" > notes.md
           gh release create "${{ github.ref_name }}" dist/* \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes
+            --notes-file notes.md
 
   docker:
     needs: build

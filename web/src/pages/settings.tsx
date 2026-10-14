@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
@@ -8,8 +9,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { LogoMark } from '@/components/logo'
+import { ReleaseNotes } from '@/components/release-notes'
 import { UpdatesCard } from '@/components/updates-card'
-import { useIsAdmin } from '@/hooks/use-auth'
+import { meKey, useIsAdmin, useUser } from '@/hooks/use-auth'
 import { brandKey, useBrand } from '@/hooks/use-brand'
 import type { Brand } from '@/lib/brand'
 import { api, ApiError, errorMessage } from '@/lib/api'
@@ -278,23 +280,184 @@ function LanguageCard() {
   )
 }
 
+function AccountCard() {
+  const { t } = useI18n()
+  const qc = useQueryClient()
+  const me = useUser()
+  const [name, setName] = useState(me.name)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const v = name.trim()
+    if (!v) return setError(t('common.nameRequired'))
+    setError(null)
+    setSaving(true)
+    try {
+      const user = await api.updateProfile(v)
+      qc.setQueryData(meKey, user)
+      setName(user.name)
+      toast.success(t('profile.saved'))
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t('profile.title')}</CardTitle>
+        <CardDescription>{t('profile.desc')}</CardDescription>
+      </CardHeader>
+      <form onSubmit={submit} noValidate className="contents">
+        <CardContent className="grid gap-4">
+          <Field label={t('profile.name')} htmlFor="profile-name" error={error}>
+            <Input
+              id="profile-name"
+              value={name}
+              maxLength={80}
+              onChange={(e) => {
+                setName(e.target.value)
+                setError(null)
+              }}
+              aria-invalid={!!error}
+            />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={t('profile.username')} htmlFor="profile-username">
+              <Input id="profile-username" value={me.username} readOnly disabled />
+            </Field>
+            <Field label={t('profile.role')} htmlFor="profile-role">
+              <Input
+                id="profile-role"
+                value={me.role === 'superadmin' ? t('role.superadmin') : t('role.user')}
+                readOnly
+                disabled
+              />
+            </Field>
+          </div>
+        </CardContent>
+        <CardFooter className="justify-end">
+          <Button type="submit" disabled={saving || name.trim() === me.name}>
+            {saving && <Loader2 className="animate-spin" />}
+            {t('common.save')}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  )
+}
+
+type TabId = 'profile' | 'branding' | 'updates'
+
+/** Underline-style tabs with tablist semantics and arrow-key navigation. */
+function Tabs({
+  tabs,
+  value,
+  onChange,
+  label,
+}: {
+  tabs: { id: TabId; label: string }[]
+  value: TabId
+  onChange: (id: TabId) => void
+  label: string
+}) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const i = tabs.findIndex((x) => x.id === value)
+    let n = -1
+    if (e.key === 'ArrowRight') n = (i + 1) % tabs.length
+    else if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length
+    else if (e.key === 'Home') n = 0
+    else if (e.key === 'End') n = tabs.length - 1
+    if (n < 0) return
+    e.preventDefault()
+    onChange(tabs[n].id)
+    refs.current[tabs[n].id]?.focus()
+  }
+  return (
+    <div role="tablist" aria-label={label} onKeyDown={onKeyDown} className="scrollbar-thin mb-5 flex gap-1 overflow-x-auto border-b">
+      {tabs.map((tab) => {
+        const active = tab.id === value
+        return (
+          <button
+            key={tab.id}
+            ref={(el) => {
+              refs.current[tab.id] = el
+            }}
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={active}
+            aria-controls={`panel-${tab.id}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(tab.id)}
+            className={cn(
+              'focus-visible:ring-ring/50 relative -mb-px shrink-0 rounded-t-md px-3.5 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px]',
+              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {tab.label}
+            <span
+              className={cn('absolute inset-x-2 bottom-0 h-0.5 rounded-full transition-colors', active ? 'bg-foreground' : 'bg-transparent')}
+              aria-hidden
+            />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const { t } = useI18n()
   const isAdmin = useIsAdmin()
+  const [params, setParams] = useSearchParams()
+  const { hash } = useLocation()
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'profile', label: t('settings.tab.profile') },
+    ...(isAdmin
+      ? ([
+          { id: 'branding', label: t('settings.tab.branding') },
+          { id: 'updates', label: t('settings.tab.updates') },
+        ] as { id: TabId; label: string }[])
+      : []),
+  ]
+  const requested = (params.get('tab') ?? (hash === '#updates' ? 'updates' : 'profile')) as TabId
+  const tab = tabs.some((x) => x.id === requested) ? requested : 'profile'
+
+  // Normalise `/settings#updates` to `/settings?tab=updates` so the state survives reloads.
+  useEffect(() => {
+    if (!params.get('tab') && hash === '#updates' && isAdmin) setParams({ tab: 'updates' }, { replace: true })
+  }, [hash, params, isAdmin, setParams])
+
   return (
     <div>
       <PageHeader title={t('settings.title')} />
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <PasswordCard />
-        <LanguageCard />
-        {isAdmin && (
-          <div className="lg:col-span-2">
-            <BrandingCard />
+      <Tabs
+        tabs={tabs}
+        value={tab}
+        onChange={(id) => setParams(id === 'profile' ? {} : { tab: id }, { replace: true })}
+        label={t('settings.tabs')}
+      />
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0} className="outline-none">
+        {tab === 'profile' && (
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <AccountCard />
+            <PasswordCard />
+            <LanguageCard />
           </div>
         )}
-        {isAdmin && (
-          <div className="lg:col-span-2">
+        {tab === 'branding' && isAdmin && (
+          <BrandingCard />
+        )}
+        {tab === 'updates' && isAdmin && (
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <UpdatesCard />
+            <ReleaseNotes />
           </div>
         )}
       </div>
