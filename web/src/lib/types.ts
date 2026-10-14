@@ -206,6 +206,7 @@ export interface MonitorEvent {
 }
 
 export interface ManagedUser extends User {
+  email?: string | null
   two_factor?: boolean
   passkeys?: number
   last_seen_at?: number | null
@@ -363,4 +364,9 @@ export interface HeatmapData {
   bucket_ms: number
   buckets: number
   items: HeatmapItem[]
+}
+
+export interface EmailResult {
+  emailed?: boolean
+  email_error?: string
 }

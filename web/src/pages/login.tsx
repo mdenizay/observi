@@ -5,7 +5,7 @@ import { ArrowLeft, KeyRound, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useMe } from '@/hooks/use-auth'
+import { useMe, useSetupStatus } from '@/hooks/use-auth'
 import { api, ApiError, errorMessage } from '@/lib/api'
 import { AuthShell } from '@/components/auth-shell'
 import { ErrorNote } from '@/components/error-note'
@@ -15,7 +15,8 @@ import { getCredential, isPasskeyCancel, passkeyErrorMessage, supportsPasskeys }
 
 export function LoginPage() {
   const { t } = useI18n()
-  const { data: me } = useMe()
+  const { data: me, isPending: mePending } = useMe()
+  const setup = useSetupStatus(!mePending && !me)
   const qc = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
@@ -34,6 +35,7 @@ export function LoginPage() {
   const codeRef = useRef<HTMLInputElement>(null)
 
   if (me) return <Navigate to={target} replace />
+  if (setup.data) return <Navigate to="/setup" replace />
 
   const done = (user: User) => {
     qc.setQueryData(['me'], user)

@@ -29,6 +29,7 @@ It runs happily on a Raspberry Pi.
   `/status`, `/down`, `/ssl`, `/domains` in the chat (long polling, nothing exposed publicly)
 - **Audit log** of who changed what, including failed logins
 - **Status heat map** on the dashboard (24h / 7d / 30d, one row per monitor) and a customizable dashboard: show, hide and reorder widgets, saved to your account
+- **First-run setup wizard**, a password generator, and mailing a new password to the user through your SMTP channel
 - **Account security** — two-factor authentication (TOTP with recovery codes), **passkeys**, session management,
   admin-issued password reset links and per-user **API tokens**
 - **SSL certificate monitoring** — HTTPS monitors show the certificate's expiry date; a distinct
@@ -57,8 +58,8 @@ curl -fsSL https://raw.githubusercontent.com/mdenizay/observi/main/install.sh | 
 ```
 
 The script downloads the matching release binary, verifies its checksum, creates an
-`observi` system user, installs and starts a systemd service, and creates the first
-superadmin (`admin`, with a generated password that is printed once).
+`observi` system user, installs and starts a systemd service, and prints a one-time setup code.
+Open the URL and a **setup wizard** creates the first superadmin (pass `--admin-password` to skip it).
 
 Useful options (`--listen` defaults to `127.0.0.1:3001`, i.e. localhost only; `--lang` sets the
 language of notifications, `en` or `tr`):
@@ -81,7 +82,7 @@ Multi-arch images (amd64, arm64 — Raspberry Pi included) are published to GitH
 ```bash
 docker run -d --name observi -p 3001:3001 -v observi-data:/data \
   --restart unless-stopped ghcr.io/mdenizay/observi:latest
-docker logs observi 2>&1 | grep password     # generated superadmin password (first start only)
+docker logs observi 2>&1 | grep 'Setup code'   # one-time code for the first-run wizard
 ```
 
 Or with Compose — see [`docker-compose.yml`](docker-compose.yml):
@@ -91,8 +92,8 @@ docker compose up -d
 ```
 
 The image is a static binary on distroless (runs as a non-root user, a few MB). Data lives in the
-`/data` volume. Set `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` to choose the first superadmin
-instead of a generated one; they are only used when the database has no users. Manage users with
+`/data` volume. The first visit runs a setup wizard (the code is in the log). Or set `OBSERVI_ADMIN_USER` /
+`OBSERVI_ADMIN_PASSWORD` to create the first superadmin up front; they are only used when the database has no users. Manage users with
 `docker exec -it observi observi user-add <username> <name> superadmin`. Upgrade with
 `docker compose pull && docker compose up -d`. To build the image yourself: `docker build -t observi .`
 
@@ -134,7 +135,7 @@ Environment variables (set them in `/etc/observi/observi.env`, then
 | `OBSERVI_LISTEN` | `127.0.0.1:3001` | Listen address |
 | `OBSERVI_RETENTION` | `90` | Heartbeat retention in days |
 | `OBSERVI_LANG` | `en` | Language of notifications: `en` or `tr` |
-| `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` | `admin` / generated | First superadmin, created only when the database has no users |
+| `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` | unset → setup wizard | First superadmin, created only when the database has no users |
 | `OBSERVI_PUBLIC_URL` | derived from the request | Public URL (e.g. `https://status.example.com`); pins the passkey relying party behind proxies |
 | `OBSERVI_UPDATE_CHECK` | `1` | Set to `0` to stop checking GitHub for new releases |
 | `RUST_LOG` | `info` | Log level |

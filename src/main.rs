@@ -15,6 +15,7 @@ mod overview;
 mod report;
 mod scheduler;
 mod security;
+mod setup;
 mod state;
 mod tags;
 mod telegram;
@@ -176,33 +177,32 @@ fn health() -> Result<()> {
 }
 
 /// On an empty database, create the first superadmin from OBSERVI_ADMIN_USER /
-/// OBSERVI_ADMIN_PASSWORD (generated and logged once when unset). Handy for containers.
-fn bootstrap_admin(db: &Db) -> Result<()> {
+/// OBSERVI_ADMIN_PASSWORD when set; otherwise return a setup code for the web wizard.
+fn bootstrap_admin(db: &Db) -> Result<Option<String>> {
     db.blocking(|c| {
         let users: i64 = c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
         if users > 0 {
-            return Ok(());
+            return Ok(None);
+        }
+        // No admin chosen up front: the web UI runs the first-run setup, guarded by a code in the log.
+        if std::env::var("OBSERVI_ADMIN_PASSWORD").is_err() {
+            let code = auth::random_hex(4);
+            tracing::warn!("first run: open the web UI to create the administrator. Setup code: {code}");
+            return Ok(Some(code));
         }
         let username = env("OBSERVI_ADMIN_USER", "admin").trim().to_lowercase();
-        let (password, generated) = match std::env::var("OBSERVI_ADMIN_PASSWORD") {
-            Ok(p) if p.chars().count() >= 8 => (p, false),
-            Ok(_) => bail!("OBSERVI_ADMIN_PASSWORD must be at least 8 characters"),
-            Err(_) => (auth::random_hex(9), true),
-        };
-        auth::create_user(c, &username, "Administrator", &password, Role::Superadmin)?;
-        if generated {
-            tracing::warn!(
-                "created superadmin '{username}' with password: {password} (shown once; change it under Settings)"
-            );
-        } else {
-            tracing::info!("created superadmin '{username}' from OBSERVI_ADMIN_PASSWORD");
+        let password = std::env::var("OBSERVI_ADMIN_PASSWORD").unwrap_or_default();
+        if password.chars().count() < 8 {
+            bail!("OBSERVI_ADMIN_PASSWORD must be at least 8 characters");
         }
-        Ok(())
+        auth::create_user(c, &username, "Administrator", &password, Role::Superadmin)?;
+        tracing::info!("created superadmin '{username}' from OBSERVI_ADMIN_PASSWORD");
+        Ok(None)
     })
 }
 
 fn serve(db: Db, db_path: &str) -> Result<()> {
-    bootstrap_admin(&db)?;
+    let setup_code = bootstrap_admin(&db)?;
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .max_blocking_threads(8)
@@ -233,6 +233,7 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
             domains: Arc::new(RwLock::new(domains)),
             challenges: Arc::default(),
             heatmaps: Arc::default(),
+            setup: Arc::new(std::sync::Mutex::new(setup_code)),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);

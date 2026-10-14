@@ -600,7 +600,7 @@ async fn login_second_factor(State(st): State<AppState>, audit: Audit, headers: 
 // ---------- passkeys ----------
 
 /// The relying-party id and origin the browser sees. `OBSERVI_PUBLIC_URL` pins them.
-fn relying_party(headers: &HeaderMap) -> (String, String) {
+pub(crate) fn relying_party(headers: &HeaderMap) -> (String, String) {
     if let Ok(url) = std::env::var("OBSERVI_PUBLIC_URL")
         && let Ok(u) = reqwest::Url::parse(url.trim())
         && let Some(host) = u.host_str()

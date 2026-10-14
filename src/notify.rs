@@ -322,29 +322,46 @@ pub async fn send(state: &AppState, ch: &Channel, alert: &Alert) -> Result<()> {
                 bail!("Webhook HTTP {}", resp.status());
             }
         }
-        Channel::Smtp(cfg) => {
-            let mut builder = Message::builder()
-                .from(cfg.from.parse::<Mailbox>().context("Invalid sender address")?)
-                .subject(&alert.title);
-            for to in cfg.to.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
-                builder = builder.to(to.parse::<Mailbox>().with_context(|| format!("Invalid recipient address: {to}"))?);
-            }
-            let email = builder.body(alert.body.clone())?;
-            let mut transport = match cfg.security.as_str() {
-                "tls" => AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.host)?,
-                "none" => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.host),
-                _ => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.host)?,
-            }
-            .port(cfg.port)
-            .timeout(Some(timeout));
-            if let (Some(u), Some(p)) = (&cfg.username, &cfg.password)
-                && !u.is_empty() {
-                    transport = transport.credentials(Credentials::new(u.clone(), p.clone()));
-                }
-            transport.build().send(email).await.context("Could not send the e-mail")?;
-        }
+        Channel::Smtp(cfg) => send_mail(cfg, &cfg.to, &alert.title, &alert.body).await?,
     }
     Ok(())
+}
+
+/// Send one plain-text e-mail through an SMTP channel's server.
+pub async fn send_mail(cfg: &SmtpCfg, to: &str, subject: &str, body: &str) -> Result<()> {
+    let timeout = Duration::from_secs(20);
+    let mut builder = Message::builder().from(cfg.from.parse::<Mailbox>().context("Invalid sender address")?).subject(subject);
+    for to in to.split([',', ';']).map(str::trim).filter(|s| !s.is_empty()) {
+        builder = builder.to(to.parse::<Mailbox>().with_context(|| format!("Invalid recipient address: {to}"))?);
+    }
+    let email = builder.body(body.to_string())?;
+    let mut transport = match cfg.security.as_str() {
+        "tls" => AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.host)?,
+        "none" => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.host),
+        _ => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.host)?,
+    }
+    .port(cfg.port)
+    .timeout(Some(timeout));
+    if let (Some(u), Some(p)) = (&cfg.username, &cfg.password)
+        && !u.is_empty()
+    {
+        transport = transport.credentials(Credentials::new(u.clone(), p.clone()));
+    }
+    transport.build().send(email).await.context("Could not send the e-mail")?;
+    Ok(())
+}
+
+/// The SMTP server used for system mail: the default channel if it is SMTP, else the first SMTP channel.
+pub fn smtp_for_system_mail(c: &Connection) -> Result<Option<SmtpCfg>> {
+    let mut found: Option<(bool, SmtpCfg)> = None;
+    for n in list(c)? {
+        if let Channel::Smtp(cfg) = n.channel
+            && found.as_ref().is_none_or(|(d, _)| !d && n.is_default)
+        {
+            found = Some((n.is_default, cfg));
+        }
+    }
+    Ok(found.map(|(_, c)| c))
 }
 
 pub fn test_alert(app: &str) -> Alert {

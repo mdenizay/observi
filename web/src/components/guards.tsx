@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { Loader2 } from 'lucide-react'
-import { useMe } from '@/hooks/use-auth'
+import { useMe, useSetupStatus } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
 
@@ -16,7 +16,8 @@ export function RequireAuth() {
   const { t } = useI18n()
   const { data, isPending, isError, refetch } = useMe()
   const location = useLocation()
-  if (isPending) return <FullPageSpinner />
+  const setup = useSetupStatus(data === null)
+  if (isPending || (data === null && setup.isPending)) return <FullPageSpinner />
   if (isError)
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-4 text-center">
@@ -26,6 +27,7 @@ export function RequireAuth() {
         </Button>
       </div>
     )
+  if (!data && setup.data) return <Navigate to="/setup" replace />
   if (!data) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   return <Outlet />
 }

@@ -6,11 +6,11 @@ import { useBrand } from '@/hooks/use-brand'
 import { useI18n } from '@/i18n'
 
 /** Centered brand + card layout shared by the sign-in and password-reset pages. */
-export function AuthShell({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
+export function AuthShell({ children, subtitle, wide }: { children: React.ReactNode; subtitle?: string; wide?: boolean }) {
   const { t } = useI18n()
   const { name } = useBrand()
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-clip p-4">
       <div
         aria-hidden
         className="graticule pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_60%_55%_at_50%_42%,black,transparent_80%)]"
@@ -23,7 +23,7 @@ export function AuthShell({ children, subtitle }: { children: React.ReactNode; s
         <LanguageSwitcher />
         <ThemeToggle />
       </div>
-      <div className="relative w-full max-w-sm">
+      <div className={wide ? 'relative w-full max-w-md' : 'relative w-full max-w-sm'}>
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <BrandMark className="shadow-raised size-11 rounded-xl" />
           <div>

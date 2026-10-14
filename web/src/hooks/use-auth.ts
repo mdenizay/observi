@@ -31,3 +31,20 @@ export function useIsAdmin() {
   const { data } = useMe()
   return data?.role === 'superadmin'
 }
+
+/** Whether the first-run setup wizard is still needed (only asked while nobody is signed in). */
+export function useSetupStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['setup-status'],
+    queryFn: async () => {
+      try {
+        return (await api.setupStatus()).needed
+      } catch {
+        return false
+      }
+    },
+    enabled,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
+}

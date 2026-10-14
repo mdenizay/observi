@@ -89,6 +89,7 @@ pub struct BeatRecord {
 
 #[derive(Clone)]
 pub struct AppState {
+    pub setup: crate::setup::SetupCode,
     pub db: Db,
     pub live: Arc<RwLock<HashMap<i64, MonitorLive>>>,
     /// Cached 24h uptime percentages, refreshed periodically.

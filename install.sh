@@ -22,7 +22,8 @@ LISTEN=""
 LANG_OPT=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD="${OBSERVI_PASSWORD:-}"
-CREATE_ADMIN=1
+CREATE_ADMIN=0
+[ -n "$ADMIN_PASSWORD" ] && CREATE_ADMIN=1
 UNINSTALL=0
 PURGE=0
 
@@ -35,9 +36,9 @@ Options:
   --listen <addr:port>      Listen address (default: 127.0.0.1:3001 on a fresh install)
   --lang <en|tr>            Language of notifications (default: en on a fresh install)
   --admin-user <name>       Username of the first superadmin (default: admin)
-  --admin-password <pass>   Password of the first superadmin (default: generated, min. 8 chars)
-  --no-admin                Do not create it now (the server then creates 'admin' on
-                            first start and writes the password to the journal)
+  --admin-password <pass>   Create the first superadmin now (min. 8 chars). Without it the
+                            web UI runs a setup wizard on first visit (setup code is printed)
+  --no-admin                Skip creating it now (this is the default)
   --uninstall               Remove the service and binary (keeps your data)
   --purge                   With --uninstall: also delete data, config and the service user
   -h, --help                Show this help
@@ -54,8 +55,8 @@ while [ $# -gt 0 ]; do
     --listen)         LISTEN="${2:?--listen needs a value}"; shift 2 ;;
     --lang)           LANG_OPT="${2:?--lang needs a value}"; shift 2 ;;
     --admin-user)     ADMIN_USER="${2:?--admin-user needs a value}"; shift 2 ;;
-    --admin-password) ADMIN_PASSWORD="${2:?--admin-password needs a value}"; shift 2 ;;
-    --no-admin)       CREATE_ADMIN=0; shift ;;
+    --admin-password) ADMIN_PASSWORD="${2:?--admin-password needs a value}"; CREATE_ADMIN=1; shift 2 ;;
+    --no-admin)       CREATE_ADMIN=0; ADMIN_PASSWORD=""; shift ;;
     --uninstall)      UNINSTALL=1; shift ;;
     --purge)          PURGE=1; shift ;;
     -h|--help)        usage; exit 0 ;;
@@ -258,7 +259,14 @@ fi
 echo
 if [ "$UPGRADE" -eq 1 ]; then say "Observi upgraded ($("$BIN" --version 2>/dev/null || echo "$VERSION"))"; else say "Observi installed"; fi
 echo "  URL:      http://$LISTEN_ADDR"
-if [ -n "$GENERATED" ]; then
+SETUP_CODE=""
+if [ "$UPGRADE" -eq 0 ] && [ "$CREATE_ADMIN" -eq 0 ]; then
+  SETUP_CODE="$(journalctl -u observi -n 50 --no-pager 2>/dev/null | grep -o 'Setup code: [0-9a-f]*' | tail -1 | awk '{print $3}')"
+fi
+if [ -n "$SETUP_CODE" ]; then
+  echo "  Setup:    open the URL and finish the setup wizard"
+  echo "  Code:     $SETUP_CODE   (also in: journalctl -u observi | grep 'Setup code')"
+elif [ -n "$GENERATED" ]; then
   echo "  Username: $ADMIN_USER"
   echo "  Password: $GENERATED   (shown once — change it under Settings)"
 elif [ "$CREATE_ADMIN" -eq 1 ] && [ -n "$ADMIN_PASSWORD" ] && [ "$UPGRADE" -eq 0 ]; then

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router'
 import { Folder, KeyRound, Link2, Loader2, LogOut, Plus, ShieldCheck, ShieldOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
@@ -22,7 +23,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { PasswordField } from '@/components/password-field'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -31,7 +34,8 @@ import { GroupChecklist } from '@/components/group-checklist'
 import { useGroups } from '@/hooks/use-groups'
 import { useMonitors } from '@/hooks/use-monitors'
 import { api, errorMessage } from '@/lib/api'
-import type { ManagedUser, Role } from '@/lib/types'
+import type { EmailResult, ManagedUser, Role } from '@/lib/types'
+import { cn } from '@/lib/utils'
 import { richText, useI18n } from '@/i18n'
 
 
@@ -55,11 +59,17 @@ function UserDialog({
   const [name, setName] = useState(user?.name ?? '')
   const [username, setUsername] = useState(user?.username ?? '')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(user?.email ?? '')
+  const [emailPassword, setEmailPassword] = useState(false)
+  const mail = useQuery({ queryKey: ['mail-status'], queryFn: api.mailStatus, staleTime: 60_000 })
   const [role, setRole] = useState<Role>(user?.role ?? 'user')
   const [monitorIds, setMonitorIds] = useState<number[]>(user?.monitor_ids ?? [])
   const [groupIds, setGroupIds] = useState<number[]>(user?.group_ids ?? [])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+
+  const mailAvailable = mail.data?.available === true
+  const canEmail = mailAvailable && !!email.trim() && (!isEdit || !!password)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -68,24 +78,39 @@ function UserDialog({
     if (!isEdit && !username.trim()) errs.username = t('users.usernameRequired')
     if (!isEdit && !password) errs.password = t('users.passwordRequired')
     if (password && password.length < 8) errs.password = t('users.passwordShort')
+    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = t('errors.email_invalid')
     setErrors(errs)
     if (Object.keys(errs).length) return
 
     setSaving(true)
     try {
+      const send = canEmail && emailPassword
+      let res: EmailResult
       if (isEdit) {
-        await api.updateUser(user.id, {
+        res = await api.updateUser(user.id, {
           name: name.trim(),
           role,
           monitor_ids: monitorIds,
           group_ids: groupIds,
-          ...(password ? { password } : {}),
+          email: email.trim(),
+          ...(password ? { password, email_password: send } : {}),
         })
         toast.success(t('users.updated'))
       } else {
-        await api.createUser({ name: name.trim(), username: username.trim(), password, role, monitor_ids: monitorIds, group_ids: groupIds })
+        res = await api.createUser({
+          name: name.trim(),
+          username: username.trim(),
+          password,
+          role,
+          monitor_ids: monitorIds,
+          group_ids: groupIds,
+          ...(email.trim() ? { email: email.trim() } : {}),
+          email_password: send,
+        })
         toast.success(t('users.created'))
       }
+      if (res?.emailed === true) toast.success(t('users.emailSent', { email: email.trim() }))
+      else if (res?.emailed === false) toast.warning(t('users.emailFailed', { error: res.email_error ?? t('errors.unexpected') }))
       await qc.invalidateQueries({ queryKey: ['users'] })
       if (isSelf) qc.invalidateQueries({ queryKey: ['me'] })
       onOpenChange(false)
@@ -132,17 +157,11 @@ function UserDialog({
             <Field
               label={t('common.password')}
               htmlFor="u-password"
+              className="sm:col-span-2"
               error={errors.password}
               hint={isEdit ? t('users.passwordHint') : undefined}
             >
-              <Input
-                id="u-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                aria-invalid={!!errors.password}
-              />
+              <PasswordField id="u-password" value={password} onChange={setPassword} invalid={!!errors.password} />
             </Field>
             <Field
               label={t('users.role')}
@@ -159,6 +178,39 @@ function UserDialog({
                 </SelectContent>
               </Select>
             </Field>
+          </div>
+
+          <div className="grid gap-2">
+            <Field label={t('users.email')} htmlFor="u-email" error={errors.email}>
+              <Input
+                id="u-email"
+                type="email"
+                autoComplete="off"
+                inputMode="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t('users.emailPlaceholder')}
+                aria-invalid={!!errors.email}
+              />
+            </Field>
+            <div className="grid gap-1">
+              <label className={cn('flex items-center gap-2.5 text-sm', canEmail ? 'cursor-pointer' : 'text-muted-foreground cursor-not-allowed')}>
+                <Checkbox checked={canEmail && emailPassword} disabled={!canEmail} onCheckedChange={(v) => setEmailPassword(v === true)} />
+                {t('users.emailPassword')}
+              </label>
+              {mail.isSuccess && !mailAvailable ? (
+                <p className="text-muted-foreground text-xs">
+                  {t('users.mailUnavailable')}{' '}
+                  <Link to="/notifications" className="text-primary underline-offset-4 hover:underline">
+                    {t('users.mailSetup')}
+                  </Link>
+                </p>
+              ) : mailAvailable && !email.trim() ? (
+                <p className="text-muted-foreground text-xs">{t('users.emailNeeded')}</p>
+              ) : mailAvailable && isEdit && !password ? (
+                <p className="text-muted-foreground text-xs">{t('users.emailNeedsPassword')}</p>
+              ) : null}
+            </div>
           </div>
 
           {role === 'user' ? (
@@ -344,7 +396,7 @@ export function UsersPage() {
                   {u.id === me.id && <span className="text-muted-foreground text-xs font-normal">{t('users.you')}</span>}
                 </>
               }
-              subtitle={`@${u.username}`}
+              subtitle={u.email ? `@${u.username} · ${u.email}` : `@${u.username}`}
               meta={
                 <>
                   {u.two_factor && (

@@ -5,6 +5,7 @@ import { Loader2, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Field } from '@/components/field'
+import { PasswordField } from '@/components/password-field'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -73,16 +74,9 @@ function PasswordCard() {
               aria-invalid={!!errors.current}
             />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4">
             <Field label={t('settings.pw.new')} htmlFor="pw-new" error={errors.next}>
-              <Input
-                id="pw-new"
-                type="password"
-                autoComplete="new-password"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                aria-invalid={!!errors.next}
-              />
+              <PasswordField id="pw-new" value={next} onChange={setNext} invalid={!!errors.next} onGenerate={setConfirm} />
             </Field>
             <Field label={t('settings.pw.confirm')} htmlFor="pw-confirm" error={errors.confirm}>
               <Input

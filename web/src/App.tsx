@@ -21,6 +21,7 @@ const SettingsPage = lazyWithReload(() => import('@/pages/settings').then((m) =>
 const GroupsPage = lazyWithReload(() => import('@/pages/groups').then((m) => ({ default: m.GroupsPage })))
 const MaintenancePage = lazyWithReload(() => import('@/pages/maintenance').then((m) => ({ default: m.MaintenancePage })))
 const ReportsPage = lazyWithReload(() => import('@/pages/reports').then((m) => ({ default: m.ReportsPage })))
+const SetupPage = lazyWithReload(() => import('@/pages/setup').then((m) => ({ default: m.SetupPage })))
 const UsersPage = lazyWithReload(() => import('@/pages/users').then((m) => ({ default: m.UsersPage })))
 
 /** Sends the user to /login on any 401 (except on /login). */
@@ -53,6 +54,7 @@ export function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset" element={<ResetPage />} />
+        <Route path="/setup" element={<SetupPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
             <Route path="/dashboard" element={<DashboardPage />} />

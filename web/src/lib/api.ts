@@ -30,6 +30,7 @@ import type {
   TokenItem,
   SecuritySummary,
   HeatmapData,
+  EmailResult,
 } from './types'
 import type { PublicKeyJSON } from './webauthn'
 
@@ -130,6 +131,9 @@ export const api = {
   preferences: () => get<{ preferences: Record<string, unknown> }>('/auth/preferences'),
   savePreferences: (preferences: Record<string, unknown>) => put('/auth/preferences', { preferences }),
   heatmap: (range: string) => get<HeatmapData>(`/overview/heatmap?range=${range}`),
+  setupStatus: () => get<{ needed: boolean }>('/setup/status', { silent401: true }),
+  setup: (b: { code: string; username: string; name: string; password: string; app_name?: string }) =>
+    post<User>('/setup', b, { silent401: true }),
   security: () => get<SecuritySummary>('/auth/security'),
   sessions: () => get<{ items: SessionItem[] }>('/auth/sessions'),
   revokeSession: (id: string) => del(`/auth/sessions/${encodeURIComponent(id)}`),
@@ -204,11 +208,22 @@ export const api = {
     role: Role
     monitor_ids: number[]
     group_ids: number[]
-  }) => post('/users', u),
+    email?: string
+    email_password?: boolean
+  }) => post<EmailResult>('/users', u),
   updateUser: (
     id: number,
-    u: { name?: string; role?: Role; password?: string; monitor_ids?: number[]; group_ids?: number[] },
-  ) => put(`/users/${id}`, u),
+    u: {
+      name?: string
+      role?: Role
+      password?: string
+      monitor_ids?: number[]
+      group_ids?: number[]
+      email?: string
+      email_password?: boolean
+    },
+  ) => put<EmailResult>(`/users/${id}`, u),
+  mailStatus: () => get<{ available: boolean }>('/users/mail-status'),
   deleteUser: (id: number) => del(`/users/${id}`),
 
   branding: () => get<Brand>('/branding', { silent401: true }),

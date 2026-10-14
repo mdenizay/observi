@@ -281,6 +281,11 @@ fn migrate(conn: &Connection) -> Result<()> {
             conn.execute_batch(ddl)?;
         }
     }
+    let has_email: bool =
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('users') WHERE name = 'email')", [], |r| r.get(0))?;
+    if !has_email {
+        conn.execute_batch("ALTER TABLE users ADD COLUMN email TEXT;")?;
+    }
     crate::activity::backfill(conn)?;
     Ok(())
 }

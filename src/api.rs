@@ -10,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use futures_util::Stream;
+use rusqlite::OptionalExtension;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -117,6 +118,7 @@ pub fn router() -> Router<AppState> {
         .route("/groups", get(list_groups).post(create_group))
         .route("/groups/{id}", put(update_group).delete(delete_group))
         .route("/users", get(list_users).post(create_user))
+        .route("/users/mail-status", get(mail_status))
         .route("/users/{id}", put(update_user).delete(delete_user))
         .route("/notifications", get(list_notifications).post(create_notification))
         .route("/notifications/test", post(test_notification))
@@ -127,6 +129,7 @@ pub fn router() -> Router<AppState> {
         .merge(crate::report::router())
         .merge(crate::security::router())
         .merge(crate::overview::router())
+        .merge(crate::setup::router())
         .fallback(|| async { ApiError::NotFound })
 }
 
@@ -1206,11 +1209,19 @@ struct CreateUserReq {
     monitor_ids: Vec<i64>,
     #[serde(default)]
     group_ids: Vec<i64>,
+    #[serde(default)]
+    email: Option<String>,
+    /// Mail the username and password to `email` (needs an SMTP channel).
+    #[serde(default)]
+    email_password: bool,
 }
 
 #[derive(Deserialize)]
 struct UpdateUserReq {
     name: Option<String>,
+    email: Option<String>,
+    #[serde(default)]
+    email_password: bool,
     role: Option<Role>,
     password: Option<String>,
     monitor_ids: Option<Vec<i64>>,
@@ -1222,14 +1233,14 @@ async fn list_users(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Js
         .db
         .call(|c| {
             let mut stmt =
-                c.prepare_cached("SELECT id, username, name, role, created_at FROM users ORDER BY name COLLATE NOCASE")?;
+                c.prepare_cached("SELECT id, username, name, role, created_at, email FROM users ORDER BY name COLLATE NOCASE")?;
             let rows = stmt
                 .query_map([], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?))
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, Option<String>>(5)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut out = Vec::with_capacity(rows.len());
-            for (id, username, name, role, created_at) in rows {
+            for (id, username, name, role, created_at, email) in rows {
                 let ids = models::user_monitor_ids(c, id)?;
                 let gids = models::user_group_ids(c, id)?;
                 let two_factor: bool =
@@ -1241,7 +1252,7 @@ async fn list_users(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Js
                     |r| r.get(0),
                 )?;
                 out.push(json!({
-                    "id": id, "username": username, "name": name, "role": role,
+                    "id": id, "username": username, "name": name, "role": role, "email": email,
                     "monitor_ids": ids, "group_ids": gids, "created_at": created_at,
                     "two_factor": two_factor, "passkeys": passkeys, "last_seen_at": last_seen,
                 }));
@@ -1256,7 +1267,7 @@ fn valid_username(u: &str) -> bool {
     (2..=64).contains(&u.len()) && u.chars().all(|c| c.is_ascii_alphanumeric() || "._-@".contains(c))
 }
 
-async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Json(req): Json<CreateUserReq>) -> ApiResult<Json<Value>> {
+async fn create_user(State(st): State<AppState>, audit: Audit, headers: HeaderMap, Admin(_): Admin, Json(req): Json<CreateUserReq>) -> ApiResult<Json<Value>> {
     let username = req.username.trim().to_lowercase();
     let uname = username.clone();
     let role_name = req.role.as_str();
@@ -1270,6 +1281,10 @@ async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, 
     if req.password.chars().count() < 8 {
         return Err(bad("password_too_short", "Password must be at least 8 characters"));
     }
+    let email = clean_email(req.email.as_deref())?;
+    let smtp = mail_precheck(&st, req.email_password, email.is_some()).await?;
+    let (mail_name, mail_user, mail_pw) = (name.clone(), username.clone(), req.password.clone());
+    let store_email = email.clone();
     let res = st
         .db
         .call(move |c| {
@@ -1279,6 +1294,7 @@ async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, 
                 return Ok(None);
             }
             let id = auth::create_user(c, &username, &name, &req.password, req.role)?;
+            c.execute("UPDATE users SET email = ? WHERE id = ?", rusqlite::params![store_email, id])?;
             models::set_user_monitors(c, id, &req.monitor_ids)?;
             models::set_user_groups(c, id, &req.group_ids)?;
             Ok(Some(id))
@@ -1286,8 +1302,12 @@ async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, 
         .await?;
     match res {
         Some(id) => {
-            audit.log("user.create", Some(("user", id, &uname)), Some(json!({ "role": role_name })));
-            Ok(Json(json!({ "id": id })))
+            audit.log("user.create", Some(("user", id, &uname)), Some(json!({ "role": role_name, "emailed": smtp.is_some() })));
+            let mut out = json!({ "id": id });
+            if let (Some(cfg), Some(to)) = (smtp, email) {
+                merge_mail_result(&mut out, send_credentials(&st, &cfg, &headers, CredentialMail { to: &to, name: &mail_name, username: &mail_user, password: &mail_pw, created: true }).await);
+            }
+            Ok(Json(out))
         }
         None => Err(bad("username_taken", "This username is already taken")),
     }
@@ -1296,6 +1316,7 @@ async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, 
 async fn update_user(
     State(st): State<AppState>,
     audit: Audit,
+    headers: HeaderMap,
     Admin(admin): Admin,
     Path(id): Path<i64>,
     Json(req): Json<UpdateUserReq>,
@@ -1307,6 +1328,19 @@ async fn update_user(
         && !p.is_empty() && p.chars().count() < 8 {
             return Err(bad("password_too_short", "Password must be at least 8 characters"));
         }
+    let new_pw = req.password.clone().filter(|p| !p.is_empty());
+    let email_update = req.email.as_deref().map(|e| clean_email(Some(e))).transpose()?;
+    let wants_mail = req.email_password && new_pw.is_some();
+    let smtp = if wants_mail {
+        let stored: Option<String> = st
+            .db
+            .call(move |c| Ok(c.query_row("SELECT email FROM users WHERE id = ?", [id], |r| r.get(0)).optional()?.flatten()))
+            .await?;
+        let has_email = email_update.as_ref().map_or(stored.is_some(), |e| e.is_some());
+        mail_precheck(&st, true, has_email).await?
+    } else {
+        None
+    };
     let changed = json!({
         "name": req.name.is_some(),
         "role": req.role.map(|r| r.as_str()),
@@ -1327,6 +1361,9 @@ async fn update_user(
             }
             if let Some(role) = req.role {
                 tx.execute("UPDATE users SET role = ? WHERE id = ?", rusqlite::params![role.as_str(), id])?;
+            }
+            if let Some(e) = &email_update {
+                tx.execute("UPDATE users SET email = ? WHERE id = ?", rusqlite::params![e, id])?;
             }
             if let Some(p) = req.password.filter(|p| !p.is_empty()) {
                 tx.execute(
@@ -1351,7 +1388,83 @@ async fn update_user(
     }
     st.notify_monitors_changed();
     audit.log("user.update", Some(("user", id, &name_of(&st, "users", id).await)), Some(changed));
-    Ok(Json(json!({})))
+    let mut out = json!({});
+    if let (Some(cfg), Some(pw)) = (smtp, new_pw) {
+        let (to, name, uname): (Option<String>, String, String) = st
+            .db
+            .call(move |c| Ok(c.query_row("SELECT email, name, username FROM users WHERE id = ?", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?))
+            .await?;
+        if let Some(to) = to {
+            merge_mail_result(&mut out, send_credentials(&st, &cfg, &headers, CredentialMail { to: &to, name: &name, username: &uname, password: &pw, created: false }).await);
+        }
+    }
+    Ok(Json(out))
+}
+
+fn clean_email(e: Option<&str>) -> ApiResult<Option<String>> {
+    let Some(e) = e.map(str::trim).filter(|e| !e.is_empty()) else { return Ok(None) };
+    let ok = e.len() <= 254 && e.split_once('@').is_some_and(|(l, d)| !l.is_empty() && d.contains('.') && !d.ends_with('.')) && !e.contains(char::is_whitespace);
+    if ok { Ok(Some(e.to_string())) } else { Err(bad("email_invalid", "Enter a valid e-mail address")) }
+}
+
+/// When the admin asked to mail the password, make sure it can work before anything is changed.
+async fn mail_precheck(st: &AppState, wanted: bool, has_email: bool) -> ApiResult<Option<notify::SmtpCfg>> {
+    if !wanted {
+        return Ok(None);
+    }
+    if !has_email {
+        return Err(bad("email_required", "Add the user's e-mail address to send the password"));
+    }
+    st.db.call(|c| notify::smtp_for_system_mail(c)).await?.map(Some).ok_or_else(|| bad("smtp_not_configured", "Add an SMTP notification channel first"))
+}
+
+fn merge_mail_result(out: &mut Value, r: anyhow::Result<()>) {
+    match r {
+        Ok(()) => out["emailed"] = json!(true),
+        Err(e) => {
+            out["emailed"] = json!(false);
+            out["email_error"] = json!(format!("{e:#}"));
+        }
+    }
+}
+
+struct CredentialMail<'a> {
+    to: &'a str,
+    name: &'a str,
+    username: &'a str,
+    password: &'a str,
+    created: bool,
+}
+
+async fn send_credentials(st: &AppState, cfg: &notify::SmtpCfg, headers: &HeaderMap, m: CredentialMail<'_>) -> anyhow::Result<()> {
+    let CredentialMail { to, name, username, password, created } = m;
+    use crate::i18n::pick;
+    let (_, origin) = crate::security::relying_party(headers);
+    let app = st.db.call(|c| brand::get(c)).await?.name;
+    let subject = if created {
+        format!("{} {app}", pick("Your account on", "Hesabınız:"))
+    } else {
+        format!("{} {app}", pick("Your password was reset on", "Parolanız sıfırlandı:"))
+    };
+    let intro = if created {
+        pick("An account was created for you.", "Sizin için bir hesap oluşturuldu.")
+    } else {
+        pick("Your password was reset by an administrator.", "Parolanız bir yönetici tarafından sıfırlandı.")
+    };
+    let body = format!(
+        "{} {name},\n\n{intro}\n\n{}: {origin}\n{}: {username}\n{}: {password}\n\n{}\n",
+        pick("Hello", "Merhaba"),
+        pick("Sign in", "Giriş"),
+        pick("Username", "Kullanıcı adı"),
+        pick("Password", "Parola"),
+        pick("Please change your password after signing in (Settings → Profile).", "Giriş yaptıktan sonra parolanızı değiştirin (Ayarlar → Profil)."),
+    );
+    notify::send_mail(cfg, to, &subject, &body).await
+}
+
+async fn mail_status(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    let available = st.db.call(|c| notify::smtp_for_system_mail(c)).await?.is_some();
+    Ok(Json(json!({ "available": available })))
 }
 
 async fn delete_user(State(st): State<AppState>, audit: Audit, Admin(admin): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {

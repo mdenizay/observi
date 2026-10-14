@@ -105,9 +105,13 @@ every monitor in it, including monitors added to the group later.
 
 ## Users (superadmin)
 A non-admin user sees `monitor_ids` ∪ all monitors of `group_ids`.
-- `GET /api/users` → `{id, username, name, role, monitor_ids: number[], group_ids: number[], created_at}[]`
-- `POST /api/users` `{username, name, password, role, monitor_ids, group_ids}`
-- `PUT /api/users/:id` `{name?, role?, password?, monitor_ids?, group_ids?}`
+- `GET /api/users` → `{id, username, name, role, email, monitor_ids: number[], group_ids: number[], created_at}[]`
+- `POST /api/users` `{username, name, password, role, monitor_ids, group_ids, email?, email_password?}`
+- `PUT /api/users/:id` `{name?, role?, password?, email?, email_password?, monitor_ids?, group_ids?}`
+- `GET /api/users/mail-status` → `{available}`: whether an SMTP notification channel exists.
+- With `email_password: true` (and an `email` on the user, plus a new password on PUT) the username and password are mailed
+  through the default SMTP channel. The response then carries `emailed: true`, or `emailed: false` with `email_error`
+  (the user is saved either way). Errors: `email_invalid`, `email_required`, `smtp_not_configured`.
 - `DELETE /api/users/:id`
 
 ## Notifications (superadmin)
@@ -233,3 +237,9 @@ curl -H "Authorization: Bearer obs_…" https://status.example.com/api/monitors
 - `GET /api/auth/preferences` → `{preferences: object}`; `PUT /api/auth/preferences` `{preferences: object}` (max 16 KB) — free-form
   per-user settings, used for the dashboard layout.
 
+
+## First-run setup (public, only while the database has no users)
+- `GET /api/setup/status` → `{needed}`
+- `POST /api/setup` `{code, username, name, password, app_name?}` — `code` is the one-time setup code printed in the server log
+  (`Setup code: …`). Creates the superadmin, optionally sets the app name and signs in (session cookie).
+  Errors: `setup_code_invalid`, `setup_done`, `username_invalid`, `name_required`, `password_too_short`.
