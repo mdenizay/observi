@@ -437,7 +437,6 @@ export const tr: Dict = {
   "ssl.expiredOn": "{date} tarihinde doldu",
   "ssl.issuer": "Veren: {issuer}",
   "ssl.checked": "Kontrol: {time}",
-  "ssl.filter": "SSL {count}",
   "ssl.filterTip": "SSL sertifikası dolmak üzere olan veya dolmuş monitörleri göster",
   "ssl.invalidShort": "SSL geçersiz",
   "ssl.tipProblem": "SSL sertifikası sorunu: {reason}",
@@ -446,4 +445,5 @@ export const tr: Dict = {
   "ssl.reason.untrusted": "sertifika güvenilir değil",
   "ssl.reason.mismatch": "sertifika alan adıyla uyuşmuyor",
   "ssl.reason.invalid": "geçersiz sertifika",
+  "ssl.label": "SSL",
 }

@@ -66,47 +66,96 @@ function readView(): View {
 
 /* ---------------------------------------------------------------- hero + tiles */
 
+interface SslTileData {
+  count: number
+  bad: boolean
+  active: boolean
+  onToggle: () => void
+}
+
 function StatusTiles({
   counts,
   loaded,
   filter,
   onToggle,
+  ssl,
 }: {
   counts: Record<Eff, number>
   loaded: boolean
   filter: Eff | null
   onToggle: (s: Eff) => void
+  ssl: SslTileData
 }) {
   const { t } = useI18n()
   const order: Eff[] = ['up', 'down', 'pending', 'paused']
+
+  const tile = (p: {
+    key: string
+    label: string
+    dot: string
+    count: number
+    text: string
+    icon: LucideIcon
+    active: boolean
+    activeCls: string
+    onClick: () => void
+    className?: string
+    title?: string
+  }) => (
+    <button
+      key={p.key}
+      title={p.title}
+      type="button"
+      aria-pressed={p.active}
+      onClick={p.onClick}
+      className={cn(
+        'bg-card shadow-card hover:border-border-strong focus-visible:ring-ring/50 flex min-w-0 items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px] sm:px-4',
+        p.active && cn('ring-2', p.activeCls),
+        p.className,
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-muted-foreground flex items-center gap-1.5 truncate text-xs font-medium">
+          <span className={cn('size-1.5 shrink-0 rounded-full', p.dot)} />
+          <span className="truncate">{p.label}</span>
+        </div>
+        <div className={cn('num mt-1 text-2xl font-semibold', p.count > 0 ? p.text : 'text-foreground/70')}>
+          {loaded ? p.count : <Skeleton className="h-8 w-10" />}
+        </div>
+      </div>
+      <p.icon className={cn('size-5 shrink-0 lg:max-xl:hidden', p.active ? p.text : 'text-muted-foreground/50')} />
+    </button>
+  )
+
+  const sslTone = ssl.count === 0 ? null : ssl.bad ? 'down' : 'pending'
   return (
-    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-5">
       {order.map((s) => {
         const st = tileStyle[s]
-        const active = filter === s
-        return (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onToggle(s)}
-            className={cn(
-              'bg-card shadow-card hover:border-border-strong focus-visible:ring-ring/50 flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-[border-color,background-color,box-shadow] duration-150 outline-none focus-visible:ring-[3px]',
-              active && cn('ring-2', st.active),
-            )}
-          >
-            <div className="min-w-0">
-              <div className="text-muted-foreground flex items-center gap-1.5 truncate text-xs font-medium">
-                <span className={cn('size-1.5 shrink-0 rounded-full', statusDot[s])} />
-                {t(`status.${s}` as const)}
-              </div>
-              <div className={cn('num mt-1 text-2xl font-semibold', counts[s] > 0 ? st.text : 'text-foreground/70')}>
-                {loaded ? counts[s] : <Skeleton className="h-8 w-10" />}
-              </div>
-            </div>
-            <st.icon className={cn('size-5 shrink-0', active ? st.text : 'text-muted-foreground/50')} />
-          </button>
-        )
+        return tile({
+          key: s,
+          label: t(`status.${s}` as const),
+          dot: statusDot[s],
+          count: counts[s],
+          text: st.text,
+          icon: st.icon,
+          active: filter === s,
+          activeCls: st.active,
+          onClick: () => onToggle(s),
+        })
+      })}
+      {tile({
+        key: 'ssl',
+        label: t('ssl.label'),
+        dot: sslTone === 'down' ? 'bg-down' : sslTone === 'pending' ? 'bg-pending' : 'bg-muted-foreground/40',
+        count: ssl.count,
+        text: sslTone === 'down' ? 'text-down' : 'text-pending',
+        icon: sslTone === 'down' ? ShieldAlert : Lock,
+        active: ssl.active,
+        activeCls: sslTone === 'down' ? 'border-down/45 bg-down/[0.06] ring-down/25' : 'border-pending/45 bg-pending/[0.06] ring-pending/25',
+        onClick: ssl.onToggle,
+        className: 'col-span-2 sm:col-span-1',
+        title: t('ssl.filterTip'),
       })}
     </div>
   )
@@ -456,7 +505,13 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
-      <StatusTiles counts={counts} loaded={!!monitors} filter={filter} onToggle={toggleFilter} />
+      <StatusTiles
+        counts={counts}
+        loaded={!!monitors}
+        filter={filter}
+        onToggle={toggleFilter}
+        ssl={{ count: sslCount, bad: sslExpired, active: sslOnly, onToggle: () => setSslOnly((v) => !v) }}
+      />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -483,22 +538,6 @@ export function DashboardPage() {
           )}
         </div>
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-          {(sslCount > 0 || sslOnly) && (
-            <button
-              type="button"
-              aria-pressed={sslOnly}
-              onClick={() => setSslOnly((v) => !v)}
-              title={t('ssl.filterTip')}
-              className={cn(
-                'num focus-visible:ring-ring/50 inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px]',
-                sslExpired ? 'border-down/30 bg-down/10 text-down' : 'border-pending/35 bg-pending/12 text-pending',
-                sslOnly && (sslExpired ? 'ring-down/50 ring-2' : 'ring-pending/60 ring-2'),
-              )}
-            >
-              {sslExpired ? <ShieldAlert className="size-3.5" /> : <Lock className="size-3.5" />}
-              {t('ssl.filter', { count: sslCount })}
-            </button>
-          )}
           <label className="flex items-center gap-2">
             <span className="text-muted-foreground text-xs">{t('dash.sort')}</span>
             <select

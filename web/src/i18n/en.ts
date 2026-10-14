@@ -436,7 +436,6 @@ export const en = {
   "ssl.expiredOn": "Expired on {date}",
   "ssl.issuer": "Issuer: {issuer}",
   "ssl.checked": "Checked {time}",
-  "ssl.filter": "SSL {count}",
   "ssl.filterTip": "Show monitors whose SSL certificate is expiring or expired",
   "ssl.invalidShort": "SSL invalid",
   "ssl.tipProblem": "SSL certificate problem: {reason}",
@@ -445,6 +444,7 @@ export const en = {
   "ssl.reason.untrusted": "untrusted certificate",
   "ssl.reason.mismatch": "certificate does not match the domain",
   "ssl.reason.invalid": "invalid certificate",
+  "ssl.label": "SSL",
 }
 
 export type Dict = typeof en
