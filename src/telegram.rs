@@ -133,16 +133,6 @@ async fn handle(state: &AppState, token: &str, update: &Value) -> Result<()> {
         return Ok(());
     }
     let chat_id = msg["chat"]["id"].as_i64().unwrap_or_default().to_string();
-    if msg["chat"]["type"].as_str() == Some("private")
-        && let Some(code) = link_code(text)
-    {
-        let reply = match link_chat(state, &code, &chat_id).await? {
-            Some(name) => format!("{} {name}", pick("Linked to the account of", "Hesap bağlandı:")),
-            None => pick("This link code is not valid or has expired.", "Bu bağlantı kodu geçersiz veya süresi dolmuş.").to_string(),
-        };
-        call(state, token, "sendMessage", json!({ "chat_id": chat_id, "text": reply }), 20).await?;
-        return Ok(());
-    }
     let cmd = text.split_whitespace().next().unwrap_or("").trim_start_matches('/');
     let cmd = cmd.split('@').next().unwrap_or("").to_lowercase();
 
@@ -413,51 +403,4 @@ pub fn alert_buttons(monitor_id: i64) -> Value {
             ],
         ]
     })
-}
-
-/// `/link CODE` or `/start CODE` (deep link) → the code.
-fn link_code(text: &str) -> Option<String> {
-    let mut parts = text.split_whitespace();
-    let cmd = parts.next()?.trim_start_matches('/').split('@').next()?.to_lowercase();
-    if cmd != "link" && cmd != "start" {
-        return None;
-    }
-    let code = parts.next()?.trim().to_lowercase();
-    (code.len() >= 8 && code.chars().all(|c| c.is_ascii_hexdigit())).then_some(code)
-}
-
-/// Attach the private chat to the user the code was issued for; returns the user's name.
-async fn link_chat(state: &AppState, code: &str, chat_id: &str) -> Result<Option<String>> {
-    let (code, chat_id) = (code.to_string(), chat_id.to_string());
-    state
-        .db
-        .call(move |c| {
-            let row: Option<(i64, String)> = c
-                .query_row(
-                    "SELECT u.id, u.name FROM telegram_links l JOIN users u ON u.id = l.user_id WHERE l.code = ? AND l.expires_at > ?",
-                    rusqlite::params![code, crate::db::now_ms()],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .ok();
-            let Some((id, name)) = row else { return Ok(None) };
-            c.execute("UPDATE users SET telegram_chat_id = ? WHERE id = ?", rusqlite::params![chat_id, id])?;
-            c.execute("DELETE FROM telegram_links WHERE user_id = ?", [id])?;
-            Ok(Some(name))
-        })
-        .await
-}
-
-/// The bot token of the first Telegram channel (the bot that talks to users).
-pub fn bot_token(c: &rusqlite::Connection) -> Result<Option<String>> {
-    Ok(load_chats(c)?.into_iter().map(|c| c.token).find(|t| !t.is_empty()))
-}
-
-pub async fn bot_username(state: &AppState, token: &str) -> Option<String> {
-    call(state, token, "getMe", json!({}), 10).await.ok()?["result"]["username"].as_str().map(str::to_string)
-}
-
-/// Send a private message through the bot.
-pub async fn send_private(state: &AppState, token: &str, chat_id: &str, text: &str) -> Result<()> {
-    call(state, token, "sendMessage", json!({ "chat_id": chat_id, "text": text, "disable_web_page_preview": true }), 20).await?;
-    Ok(())
 }

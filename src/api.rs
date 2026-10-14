@@ -21,7 +21,6 @@ use crate::update;
 use crate::db::now_ms;
 use crate::models::{self, Monitor, MonitorConfig, Role, User};
 use crate::notify::{self, NotificationInput};
-use crate::i18n::pick;
 use crate::scheduler;
 use crate::state::{AppState, Beat, Event, PAUSED, status_str};
 
@@ -120,9 +119,6 @@ pub fn router() -> Router<AppState> {
         .route("/groups/{id}", put(update_group).delete(delete_group))
         .route("/users", get(list_users).post(create_user))
         .route("/users/mail-status", get(mail_status))
-        .route("/users/{id}/telegram-link", post(admin_telegram_link))
-        .route("/auth/telegram", get(telegram_status).delete(telegram_unlink))
-        .route("/auth/telegram/link", post(telegram_link))
         .route("/users/{id}", put(update_user).delete(delete_user))
         .route("/notifications", get(list_notifications).post(create_notification))
         .route("/notifications/test", post(test_notification))
@@ -1226,9 +1222,6 @@ struct UpdateUserReq {
     email: Option<String>,
     #[serde(default)]
     email_password: bool,
-    /// Send the new password to the user's linked Telegram chat.
-    #[serde(default)]
-    telegram_password: bool,
     role: Option<Role>,
     password: Option<String>,
     monitor_ids: Option<Vec<i64>>,
@@ -1240,14 +1233,14 @@ async fn list_users(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Js
         .db
         .call(|c| {
             let mut stmt =
-                c.prepare_cached("SELECT id, username, name, role, created_at, email, telegram_chat_id IS NOT NULL FROM users ORDER BY name COLLATE NOCASE")?;
+                c.prepare_cached("SELECT id, username, name, role, created_at, email FROM users ORDER BY name COLLATE NOCASE")?;
             let rows = stmt
                 .query_map([], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, bool>(6)?))
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, Option<String>>(5)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut out = Vec::with_capacity(rows.len());
-            for (id, username, name, role, created_at, email, telegram) in rows {
+            for (id, username, name, role, created_at, email) in rows {
                 let ids = models::user_monitor_ids(c, id)?;
                 let gids = models::user_group_ids(c, id)?;
                 let two_factor: bool =
@@ -1259,7 +1252,7 @@ async fn list_users(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Js
                     |r| r.get(0),
                 )?;
                 out.push(json!({
-                    "id": id, "username": username, "name": name, "role": role, "email": email, "telegram": telegram,
+                    "id": id, "username": username, "name": name, "role": role, "email": email,
                     "monitor_ids": ids, "group_ids": gids, "created_at": created_at,
                     "two_factor": two_factor, "passkeys": passkeys, "last_seen_at": last_seen,
                 }));
@@ -1337,7 +1330,6 @@ async fn update_user(
         }
     let new_pw = req.password.clone().filter(|p| !p.is_empty());
     let email_update = req.email.as_deref().map(|e| clean_email(Some(e))).transpose()?;
-    let new_pw2 = new_pw.clone();
     let wants_mail = req.email_password && new_pw.is_some();
     let smtp = if wants_mail {
         let stored: Option<String> = st
@@ -1346,23 +1338,6 @@ async fn update_user(
             .await?;
         let has_email = email_update.as_ref().map_or(stored.is_some(), |e| e.is_some());
         mail_precheck(&st, true, has_email).await?
-    } else {
-        None
-    };
-    let tg = if req.telegram_password && new_pw.is_some() {
-        let target = st
-            .db
-            .call(move |c| {
-                let chat: Option<String> =
-                    c.query_row("SELECT telegram_chat_id FROM users WHERE id = ?", [id], |r| r.get(0)).optional()?.flatten();
-                Ok((chat, crate::telegram::bot_token(c)?))
-            })
-            .await?;
-        match target {
-            (_, None) => return Err(bad("telegram_not_configured", "Add a Telegram notification channel first")),
-            (None, _) => return Err(bad("telegram_not_linked", "This user has not linked Telegram yet")),
-            (Some(chat), Some(token)) => Some((chat, token)),
-        }
     } else {
         None
     };
@@ -1421,23 +1396,6 @@ async fn update_user(
             .await?;
         if let Some(to) = to {
             merge_mail_result(&mut out, send_credentials(&st, &cfg, &headers, CredentialMail { to: &to, name: &name, username: &uname, password: &pw, created: false }).await);
-        }
-    }
-    if let (Some((chat, token)), Some(pw)) = (tg, new_pw2) {
-        let (uname, origin) = (name_of_user(&st, id).await, crate::security::relying_party(&headers).1);
-        let text = format!(
-            "{}\n{origin}\n{}: {uname}\n{}: {pw}\n\n{}",
-            pick("Your password was reset by an administrator.", "Parolanız bir yönetici tarafından sıfırlandı."),
-            pick("Username", "Kullanıcı adı"),
-            pick("Password", "Parola"),
-            pick("Please change it after signing in (Settings → Security).", "Giriş yaptıktan sonra değiştirin (Ayarlar → Güvenlik)."),
-        );
-        match crate::telegram::send_private(&st, &token, &chat, &text).await {
-            Ok(()) => out["telegram_sent"] = json!(true),
-            Err(e) => {
-                out["telegram_sent"] = json!(false);
-                out["telegram_error"] = json!(format!("{e:#}"));
-            }
         }
     }
     Ok(Json(out))
@@ -1502,57 +1460,6 @@ async fn send_credentials(st: &AppState, cfg: &notify::SmtpCfg, headers: &Header
         pick("Please change your password after signing in (Settings → Profile).", "Giriş yaptıktan sonra parolanızı değiştirin (Ayarlar → Profil)."),
     );
     notify::send_mail(cfg, to, &subject, &body).await
-}
-
-async fn name_of_user(st: &AppState, id: i64) -> String {
-    st.db.call(move |c| Ok(c.query_row("SELECT username FROM users WHERE id = ?", [id], |r| r.get(0))?)).await.unwrap_or_default()
-}
-
-/// Issue a one-time code the user sends to the bot (`/link CODE`) to attach their private chat.
-async fn issue_telegram_link(st: &AppState, user_id: i64) -> ApiResult<Json<Value>> {
-    let token = st.db.call(|c| crate::telegram::bot_token(c)).await?.ok_or_else(|| bad("telegram_not_configured", "Add a Telegram notification channel first"))?;
-    let code = auth::random_hex(5);
-    let expires_at = now_ms() + 15 * 60_000;
-    let c2 = code.clone();
-    st.db
-        .call(move |c| {
-            c.execute("DELETE FROM telegram_links WHERE user_id = ?", [user_id])?;
-            c.execute("INSERT INTO telegram_links (code, user_id, expires_at) VALUES (?,?,?)", rusqlite::params![c2, user_id, expires_at])?;
-            Ok(())
-        })
-        .await?;
-    let bot = crate::telegram::bot_username(st, &token).await;
-    Ok(Json(json!({ "code": code, "command": format!("/link {code}"), "bot": bot, "expires_at": expires_at })))
-}
-
-async fn telegram_link(State(st): State<AppState>, AuthUser(user): AuthUser) -> ApiResult<Json<Value>> {
-    issue_telegram_link(&st, user.id).await
-}
-
-async fn admin_telegram_link(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
-    let exists: bool = st.db.call(move |c| Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", [id], |r| r.get(0))?)).await?;
-    if !exists {
-        return Err(ApiError::NotFound);
-    }
-    issue_telegram_link(&st, id).await
-}
-
-async fn telegram_status(State(st): State<AppState>, AuthUser(user): AuthUser) -> ApiResult<Json<Value>> {
-    let uid = user.id;
-    let (linked, available) = st
-        .db
-        .call(move |c| {
-            let linked: bool = c.query_row("SELECT telegram_chat_id IS NOT NULL FROM users WHERE id = ?", [uid], |r| r.get(0))?;
-            Ok((linked, crate::telegram::bot_token(c)?.is_some()))
-        })
-        .await?;
-    Ok(Json(json!({ "linked": linked, "available": available })))
-}
-
-async fn telegram_unlink(State(st): State<AppState>, AuthUser(user): AuthUser) -> ApiResult<Json<Value>> {
-    let uid = user.id;
-    st.db.call(move |c| Ok(c.execute("UPDATE users SET telegram_chat_id = NULL WHERE id = ?", [uid])?)).await?;
-    Ok(Json(json!({})))
 }
 
 async fn mail_status(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {

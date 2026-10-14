@@ -17,11 +17,6 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL CHECK (role IN ('superadmin','user')),
     created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS telegram_links (
-    code TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -290,11 +285,6 @@ fn migrate(conn: &Connection) -> Result<()> {
         conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('users') WHERE name = 'email')", [], |r| r.get(0))?;
     if !has_email {
         conn.execute_batch("ALTER TABLE users ADD COLUMN email TEXT;")?;
-    }
-    let has_tg: bool =
-        conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('users') WHERE name = 'telegram_chat_id')", [], |r| r.get(0))?;
-    if !has_tg {
-        conn.execute_batch("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT;")?;
     }
     crate::activity::backfill(conn)?;
     Ok(())
