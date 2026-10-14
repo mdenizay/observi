@@ -46,13 +46,41 @@ fn token_hash(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-pub fn create_session(c: &Connection, user_id: i64) -> Result<String> {
+/// Where and how a session was started.
+pub struct SessionMeta {
+    pub ip: String,
+    pub user_agent: String,
+    /// "password", "password+2fa", "recovery" or "passkey".
+    pub method: &'static str,
+}
+
+impl SessionMeta {
+    pub fn from_headers(headers: &axum::http::HeaderMap, method: &'static str) -> Self {
+        let user_agent = headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .chars()
+            .take(300)
+            .collect();
+        SessionMeta { ip: crate::audit::client_ip(headers), user_agent, method }
+    }
+}
+
+/// Public identifier of a session (a prefix of its token hash; safe to show and
+/// useless for authenticating).
+pub fn session_public_id(token: &str) -> String {
+    token_hash(token)[..16].to_string()
+}
+
+pub fn create_session(c: &Connection, user_id: i64, meta: &SessionMeta) -> Result<String> {
     let token = random_hex(32);
     let now = now_ms();
     c.execute("DELETE FROM sessions WHERE expires_at < ?", [now])?;
     c.execute(
-        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-        rusqlite::params![token_hash(&token), user_id, now + SESSION_TTL_MS],
+        "INSERT INTO sessions (token_hash, user_id, expires_at, created_at, last_seen_at, ip, user_agent, method) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![token_hash(&token), user_id, now + SESSION_TTL_MS, now, now, meta.ip, meta.user_agent, meta.method],
     )?;
     Ok(token)
 }
@@ -63,7 +91,7 @@ pub fn delete_session(c: &Connection, token: &str) -> Result<()> {
 }
 
 pub fn session_user(c: &Connection, token: &str) -> Result<Option<User>> {
-    Ok(c
+    let user = c
         .query_row(
             "SELECT u.id, u.username, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id \
              WHERE s.token_hash = ? AND s.expires_at > ?",
@@ -77,7 +105,64 @@ pub fn session_user(c: &Connection, token: &str) -> Result<Option<User>> {
                 })
             },
         )
-        .optional()?)
+        .optional()?;
+    if user.is_some() {
+        // Keep "last active" fresh without writing on every request.
+        let now = now_ms();
+        c.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ? AND last_seen_at < ?",
+            rusqlite::params![now, token_hash(token), now - 60_000],
+        )?;
+    }
+    Ok(user)
+}
+
+pub enum TokenAuth {
+    Ok(User),
+    ReadOnly,
+    Invalid,
+}
+
+pub fn api_token_hash(token: &str) -> String {
+    token_hash(token)
+}
+
+/// Authenticate an `obs_…` API token; read-only tokens only pass for safe methods.
+pub fn token_user(c: &Connection, token: &str, method: &axum::http::Method) -> Result<TokenAuth> {
+    let now = now_ms();
+    let row = c
+        .query_row(
+            "SELECT t.id, t.scope, t.expires_at, t.last_used_at, u.id, u.username, u.name, u.role \
+             FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?",
+            [token_hash(token)],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<i64>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                    User {
+                        id: r.get(4)?,
+                        username: r.get(5)?,
+                        name: r.get(6)?,
+                        role: Role::parse(&r.get::<_, String>(7)?),
+                    },
+                ))
+            },
+        )
+        .optional()?;
+    let Some((id, scope, expires_at, last_used, user)) = row else { return Ok(TokenAuth::Invalid) };
+    if expires_at.is_some_and(|e| e <= now) {
+        return Ok(TokenAuth::Invalid);
+    }
+    let safe = matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS);
+    if scope == "read" && !safe {
+        return Ok(TokenAuth::ReadOnly);
+    }
+    if last_used.is_none_or(|l| now - l > 60_000) {
+        c.execute("UPDATE api_tokens SET last_used_at = ? WHERE id = ?", rusqlite::params![now, id])?;
+    }
+    Ok(TokenAuth::Ok(user))
 }
 
 pub fn create_user(c: &Connection, username: &str, name: &str, password: &str, role: Role) -> Result<i64> {
@@ -110,6 +195,25 @@ impl FromRequestParts<AppState> for AuthUser {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        // API tokens: `Authorization: Bearer obs_…`
+        if let Some(bearer) = parts
+            .headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|t| t.starts_with("obs_"))
+        {
+            let (token, method) = (bearer.to_string(), parts.method.clone());
+            return match state.db.call(move |c| token_user(c, &token, &method)).await? {
+                TokenAuth::Ok(user) => {
+                    crate::audit::note_actor(parts, &user);
+                    Ok(AuthUser(user))
+                }
+                TokenAuth::ReadOnly => Err(ApiError::Bad("token_read_only", "This API token is read-only".into())),
+                TokenAuth::Invalid => Err(ApiError::Unauthorized),
+            };
+        }
         let token = cookie_value(parts, COOKIE).ok_or(ApiError::Unauthorized)?;
         let user = state
             .db

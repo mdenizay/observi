@@ -144,6 +144,48 @@ CREATE TABLE IF NOT EXISTS domains (
     alerted_level INTEGER NOT NULL DEFAULT 99,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by TEXT
+);
+CREATE TABLE IF NOT EXISTS user_totp (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    secret TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    last_step INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS recovery_codes_user ON recovery_codes (user_id);
+CREATE TABLE IF NOT EXISTS passkeys (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    cred_id BLOB NOT NULL UNIQUE,
+    public_key BLOB NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    prefix TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'write',
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    expires_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS certs (
     monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,
@@ -218,6 +260,22 @@ fn migrate(conn: &Connection) -> Result<()> {
     )?;
     if !has_digest {
         conn.execute_batch("ALTER TABLE notifications ADD COLUMN digest INTEGER NOT NULL DEFAULT 1;")?;
+    }
+    for (col, ddl) in [
+        ("created_at", "ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"),
+        ("last_seen_at", "ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0"),
+        ("ip", "ALTER TABLE sessions ADD COLUMN ip TEXT"),
+        ("user_agent", "ALTER TABLE sessions ADD COLUMN user_agent TEXT"),
+        ("method", "ALTER TABLE sessions ADD COLUMN method TEXT"),
+    ] {
+        let has: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name = ?)",
+            [col],
+            |r| r.get(0),
+        )?;
+        if !has {
+            conn.execute_batch(ddl)?;
+        }
     }
     crate::activity::backfill(conn)?;
     Ok(())

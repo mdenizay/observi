@@ -12,10 +12,12 @@ Status codes used in heartbeats (`s`): `0` = down, `1` = up, `2` = pending, `3` 
 Monitor `status` string: `"up" | "down" | "pending" | "paused" | "unknown"`.
 
 ## Auth
-- `POST /api/auth/login` `{username, password}` → `User`
-- `POST /api/auth/logout` → `{}`
-- `GET  /api/auth/me` → `User` (401 if not logged in)
-- `POST /api/auth/password` `{current, new}` → `{}`
+- `POST /api/auth/login` `{username, password}` → `User`, or `{needs_2fa: true, challenge, username}` when the user has two-factor
+  authentication (no cookie yet): finish with `POST /api/auth/login/2fa` `{challenge, code}` (a 6-digit code or a recovery code).
+  A challenge allows 5 attempts and lasts 5 minutes.
+- `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/password` `{current, new}` (signs out the other devices),
+  `PUT /api/auth/profile` `{name}`
+- API tokens: send `Authorization: Bearer obs_…` instead of the cookie (see "API tokens").
 
 `User = {id, username, name, role: "superadmin"|"user"}`
 
@@ -189,4 +191,37 @@ Registration expiry of each monitored domain is looked up server-side (RDAP, fal
 - `GET|PUT /api/reports/settings` (superadmin) `{weekly: {enabled, day: 0..6}, monthly: {enabled, day: 1..28}, hour: 0..23, tz_offset_min}`
   — scheduled digests sent to the notification channels that opted in (`digest: true`), covering the monitors attached to each channel.
 - `POST /api/reports/send` (superadmin) `{period: "weekly"|"monthly"}` → `{sent}` — send now.
+
+## Security
+- `GET /api/auth/security` → `{two_factor: {enabled, recovery_remaining}, passkeys, tokens, sessions}`
+- **Sessions:** `GET /api/auth/sessions` → `{items: [{id, current, created_at, last_seen_at, ip, device, method}]}`;
+  `DELETE /api/auth/sessions/:id`; `POST /api/auth/sessions/revoke-others` → `{revoked}`
+- **Two-factor (TOTP):** `POST /api/auth/2fa/setup` → `{secret, otpauth_url, qr_svg}`; `POST /api/auth/2fa/enable` `{code}` →
+  `{recovery_codes: string[10]}` (shown once); `POST /api/auth/2fa/disable` `{password, code}`;
+  `POST /api/auth/2fa/recovery-codes` `{password, code}` → new codes. Errors: `invalid_code`, `current_password_wrong`,
+  `two_factor_not_setup`, `two_factor_already_enabled`, `two_factor_not_enabled`, `challenge_expired`.
+- **Passkeys (WebAuthn, ES256, user verification required):** `GET /api/auth/passkeys` → `{items: [{id, name, created_at, last_used_at}]}`,
+  `DELETE /api/auth/passkeys/:id`; register: `POST /api/auth/passkeys/options` → `{challenge_id, publicKey}` (pass `publicKey` to
+  `navigator.credentials.create` after decoding the base64url fields `challenge`, `user.id`, `excludeCredentials[].id`), then
+  `POST /api/auth/passkeys/register` `{challenge_id, name?, credential: {id, rawId, response: {clientDataJSON, attestationObject}}}`
+  (all binary fields base64url). Sign in: `POST /api/auth/passkey/options` `{username?}` (public) → `{challenge_id, publicKey}`, then
+  `POST /api/auth/passkey/login` `{challenge_id, credential: {id, rawId, response: {clientDataJSON, authenticatorData, signature, userHandle}}}`
+  → `User` + cookie. Errors: `passkey_invalid`, `passkey_unsupported`, `passkey_exists`, `challenge_expired`.
+  Set `OBSERVI_PUBLIC_URL` (e.g. `https://status.example.com`) to pin the relying-party id and origin behind proxies.
+- **Password reset (admin-issued links):** `POST /api/users/:id/reset-link` `{hours?}` → `{token, path, expires_at, username}`
+  (superadmin); public `GET /api/auth/reset/:token` → `{valid, name}`; `POST /api/auth/reset` `{token, password}` (single use, signs the
+  user out everywhere). Errors: `reset_link_invalid`, `password_too_short`.
+- **Admin tools:** `POST /api/users/:id/sessions/revoke`, `POST /api/users/:id/security/reset` (removes two-factor, passkeys and
+  sessions of a user who lost their device). `GET /api/users` items also carry `two_factor`, `passkeys` and `last_seen_at`.
+
+## API tokens
+Create tokens for scripts and integrations; they act with the permissions of the user who created them.
+- `GET /api/tokens` → `{items: [{id, name, prefix, scope: "read"|"write", created_at, last_used_at, expires_at}]}`
+- `POST /api/tokens` `{name, scope?: "read"|"write", expires_days?}` → `{token, item}` — the token (`obs_…`) is shown only once
+- `DELETE /api/tokens/:id`
+- Use it with `Authorization: Bearer obs_…`; read-only tokens are rejected for anything but GET/HEAD with `token_read_only`.
+
+```bash
+curl -H "Authorization: Bearer obs_…" https://status.example.com/api/monitors
+```
 

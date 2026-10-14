@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { LogoMark } from '@/components/logo'
 import { Tabs } from '@/components/tabs'
+import { ApiTokens } from '@/components/api-tokens'
+import { PasskeysCard, SessionsCard, TwoFactorCard } from '@/components/security-cards'
 import { AuditLog } from '@/components/audit-log'
 import { ReleaseNotes } from '@/components/release-notes'
 import { UpdatesCard } from '@/components/updates-card'
@@ -353,7 +355,7 @@ function AccountCard() {
   )
 }
 
-type TabId = 'profile' | 'branding' | 'updates' | 'audit'
+type TabId = 'profile' | 'security' | 'api' | 'branding' | 'updates' | 'audit'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -363,6 +365,8 @@ export function SettingsPage() {
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'profile', label: t('settings.tab.profile') },
+    { id: 'security', label: t('settings.tab.security') },
+    { id: 'api', label: t('settings.tab.api') },
     ...(isAdmin
       ? ([
           { id: 'branding', label: t('settings.tab.branding') },
@@ -392,10 +396,18 @@ export function SettingsPage() {
         {tab === 'profile' && (
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <AccountCard />
-            <PasswordCard />
             <LanguageCard />
           </div>
         )}
+        {tab === 'security' && (
+          <div className="grid items-start gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+            <PasswordCard />
+            <TwoFactorCard />
+            <PasskeysCard />
+            <SessionsCard />
+          </div>
+        )}
+        {tab === 'api' && <ApiTokens />}
         {tab === 'branding' && isAdmin && (
           <BrandingCard />
         )}

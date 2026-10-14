@@ -69,10 +69,13 @@ export function RowActions({
   onEdit,
   onDelete,
   deleteDisabled,
+  extra,
 }: {
   onEdit: () => void
   onDelete: () => void
   deleteDisabled?: boolean
+  /** Additional menu items shown between Edit and Delete. */
+  extra?: { label: string; icon: React.ReactNode; onSelect: () => void }[]
 }) {
   const { t } = useI18n()
   return (
@@ -87,6 +90,12 @@ export function RowActions({
           <Pencil />
           {t('common.edit')}
         </DropdownMenuItem>
+        {extra?.map((x) => (
+          <DropdownMenuItem key={x.label} onSelect={x.onSelect}>
+            {x.icon}
+            {x.label}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive disabled={deleteDisabled} onSelect={onDelete}>
           <Trash2 />

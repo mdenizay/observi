@@ -1,6 +1,5 @@
 //! Time-based one-time passwords (RFC 6238, SHA-1, 6 digits, 30 s) and the
 //! small helpers around them: base32, QR codes and recovery codes.
-#![allow(dead_code)] // wired up with the security endpoints in the next step
 
 use anyhow::{Result, anyhow};
 use hmac::{Hmac, KeyInit, Mac};

@@ -109,6 +109,8 @@ pub struct AppState {
     pub maint: Arc<RwLock<crate::maintenance::ActiveMap>>,
     /// Domain registration expiry per registrable domain.
     pub domains: Arc<RwLock<crate::domain::Domains>>,
+    /// Short-lived sign-in challenges (second factor, passkey ceremonies).
+    pub challenges: Arc<crate::security::Challenges>,
 }
 
 impl AppState {

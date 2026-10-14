@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Folder, Loader2, Plus } from 'lucide-react'
+import { Folder, KeyRound, Link2, Loader2, LogOut, Plus, ShieldCheck, ShieldOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/app-shell'
 import { Avatar } from '@/components/avatar'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ListCard, ListRow, ListSearch, ListSkeleton, RowActions } from '@/components/list-kit'
-import { formatNumber } from '@/lib/format'
+import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
+import { CopyButton } from '@/components/copy-button'
+import { useNow } from '@/hooks/use-now'
 import { Field } from '@/components/field'
 import { MonitorPicker } from '@/components/monitor-picker'
 import { Badge } from '@/components/ui/badge'
@@ -206,6 +208,74 @@ function UserDialog({
   )
 }
 
+const RESET_HOURS = ['1', '24', '72', '168'] as const
+
+function ResetLinkDialog({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const { t } = useI18n()
+  const [hours, setHours] = useState<(typeof RESET_HOURS)[number]>('24')
+  const [busy, setBusy] = useState(false)
+  const [link, setLink] = useState<{ url: string; expires: number } | null>(null)
+
+  const generate = async () => {
+    setBusy(true)
+    try {
+      const res = await api.userResetLink(user.id, Number(hours))
+      setLink({ url: `${window.location.origin}${res.path}`, expires: res.expires_at })
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('users.resetLinkTitle')}</DialogTitle>
+          <DialogDescription>{t('users.resetLinkDesc', { name: user.name })}</DialogDescription>
+        </DialogHeader>
+        {link ? (
+          <div className="grid gap-3">
+            <div className="flex gap-2">
+              <Input readOnly aria-label={t('users.resetLink')} value={link.url} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} autoFocus />
+              <CopyButton text={link.url} />
+            </div>
+            <p className="text-muted-foreground text-xs">{t('users.resetLinkExpires', { when: formatDateTime(link.expires) })}</p>
+            <p className="text-muted-foreground text-xs">{t('users.resetLinkNote')}</p>
+          </div>
+        ) : (
+          <Field label={t('users.resetValid')} htmlFor="reset-hours">
+            <Select value={hours} onValueChange={(v) => setHours(v as typeof hours)}>
+              <SelectTrigger id="reset-hours">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RESET_HOURS.map((h) => (
+                  <SelectItem key={h} value={h}>
+                    {t(`users.hours.${h}` as const)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            {link ? t('common.done') : t('common.cancel')}
+          </Button>
+          {!link && (
+            <Button onClick={generate} disabled={busy}>
+              {busy && <Loader2 className="animate-spin" />}
+              {t('users.generate')}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function UsersPage() {
   const { t, lang } = useI18n()
   const me = useUser()
@@ -219,6 +289,10 @@ export function UsersPage() {
     key: 0,
   })
   const [toDelete, setToDelete] = useState<ManagedUser | null>(null)
+  const [resetFor, setResetFor] = useState<ManagedUser | null>(null)
+  const [signOutFor, setSignOutFor] = useState<ManagedUser | null>(null)
+  const [secResetFor, setSecResetFor] = useState<ManagedUser | null>(null)
+  const now = useNow(60_000)
 
   const openDialog = (user: ManagedUser | null) => setDialog((d) => ({ open: true, user, key: d.key + 1 }))
   const groupName = (id: number) => groups.data?.find((g) => g.id === id)?.name
@@ -272,7 +346,25 @@ export function UsersPage() {
               }
               subtitle={`@${u.username}`}
               meta={
-                u.role === 'superadmin' ? (
+                <>
+                  {u.two_factor && (
+                    <Badge variant="up" title={t('users.twoFactorOn')}>
+                      <ShieldCheck />
+                      {t('users.twoFactor')}
+                    </Badge>
+                  )}
+                  {(u.passkeys ?? 0) > 0 && (
+                    <Badge variant="outline" className="text-muted-foreground font-normal">
+                      <KeyRound />
+                      {t('users.passkeys', { count: u.passkeys ?? 0 })}
+                    </Badge>
+                  )}
+                  {u.last_seen_at ? (
+                    <span className="text-muted-foreground text-xs whitespace-nowrap" title={formatDateTime(u.last_seen_at)}>
+                      {t('users.lastActive', { when: formatRelative(u.last_seen_at, now) })}
+                    </span>
+                  ) : null}
+                {u.role === 'superadmin' ? (
                   <span className="text-muted-foreground text-xs">{t('users.allAccess')}</span>
                 ) : (
                   <>
@@ -289,7 +381,8 @@ export function UsersPage() {
                       {t('monitors.count', { count: u.monitor_ids.length })}
                     </span>
                   </>
-                )
+                )}
+                </>
               }
               actions={
                 <>
@@ -300,6 +393,11 @@ export function UsersPage() {
                     onEdit={() => openDialog(u)}
                     onDelete={() => setToDelete(u)}
                     deleteDisabled={u.id === me.id}
+                    extra={[
+                      { label: t('users.resetLinkAction'), icon: <Link2 />, onSelect: () => setResetFor(u) },
+                      { label: t('users.signOutEverywhere'), icon: <LogOut />, onSelect: () => setSignOutFor(u) },
+                      { label: t('users.securityReset'), icon: <ShieldOff />, onSelect: () => setSecResetFor(u) },
+                    ]}
                   />
                 </>
               }
@@ -315,6 +413,43 @@ export function UsersPage() {
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       />
 
+      {resetFor && <ResetLinkDialog user={resetFor} onClose={() => setResetFor(null)} />}
+      <ConfirmDialog
+        open={!!signOutFor}
+        onOpenChange={(o) => !o && setSignOutFor(null)}
+        title={t('users.signOutTitle')}
+        description={t('users.signOutDesc', { name: signOutFor?.name ?? '' })}
+        confirmLabel={t('users.signOutEverywhere')}
+        onConfirm={async () => {
+          if (!signOutFor) return
+          try {
+            const res = await api.userRevokeSessions(signOutFor.id)
+            toast.success(t('sess.revokedMany', { count: res.revoked ?? 0 }))
+            qc.invalidateQueries({ queryKey: ['users'] })
+          } catch (e) {
+            toast.error(errorMessage(e))
+            throw e
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!secResetFor}
+        onOpenChange={(o) => !o && setSecResetFor(null)}
+        title={t('users.securityResetTitle')}
+        description={t('users.securityResetDesc', { name: secResetFor?.name ?? '' })}
+        confirmLabel={t('users.securityResetConfirm')}
+        onConfirm={async () => {
+          if (!secResetFor) return
+          try {
+            await api.userSecurityReset(secResetFor.id)
+            toast.success(t('users.securityResetDone'))
+            qc.invalidateQueries({ queryKey: ['users'] })
+          } catch (e) {
+            toast.error(errorMessage(e))
+            throw e
+          }
+        }}
+      />
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}

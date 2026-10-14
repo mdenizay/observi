@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 const GROUPS = [
   { id: 'all', key: 'audit.gAll', prefixes: [] as string[] },
   { id: 'auth', key: 'audit.gAuth', prefixes: ['auth.'] },
+  { id: 'security', key: 'audit.gSecurity', prefixes: ['auth.2fa', 'auth.passkey', 'token.', 'user.reset_link', 'user.security_reset'] },
   { id: 'monitors', key: 'audit.gMonitors', prefixes: ['monitor.'] },
   { id: 'groups', key: 'audit.gGroups', prefixes: ['group.'] },
   { id: 'users', key: 'audit.gUsers', prefixes: ['user.'] },
@@ -36,7 +37,7 @@ function useDebounced<T>(value: T, ms: number) {
 function Row({ e, now, open, onToggle }: { e: AuditEntry; now: number; open: boolean; onToggle: () => void }) {
   const { t } = useI18n()
   const label = translateDynamic(`audit.a.${e.action}`) ?? e.action
-  const failed = e.action === 'auth.login_failed'
+  const failed = e.action === 'auth.login_failed' || e.action === 'auth.2fa_failed'
   const hasDetails = !!e.details && Object.keys(e.details).length > 0
   const target = e.target_name ?? (e.target_id != null ? `#${e.target_id}` : null)
   return (

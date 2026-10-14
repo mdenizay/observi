@@ -206,6 +206,9 @@ export interface MonitorEvent {
 }
 
 export interface ManagedUser extends User {
+  two_factor?: boolean
+  passkeys?: number
+  last_seen_at?: number | null
   monitor_ids: number[]
   group_ids: number[]
   created_at: number
@@ -311,3 +314,36 @@ export type BulkAction =
   | 'end_maintenance'
   | 'tag_add'
   | 'tag_remove'
+
+export type LoginResult = User | { needs_2fa: true; challenge: string; username: string }
+
+export interface SessionItem {
+  id: string
+  current: boolean
+  created_at: number
+  last_seen_at: number
+  ip: string | null
+  device: string | null
+  method: string | null
+}
+export interface PasskeyItem {
+  id: string
+  name: string
+  created_at: number
+  last_used_at: number | null
+}
+export interface TokenItem {
+  id: number
+  name: string
+  prefix: string
+  scope: 'read' | 'write'
+  created_at: number
+  last_used_at: number | null
+  expires_at: number | null
+}
+export interface SecuritySummary {
+  two_factor: { enabled: boolean; recovery_remaining: number }
+  passkeys: number
+  tokens: number
+  sessions: number
+}

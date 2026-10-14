@@ -13,6 +13,7 @@ mod models;
 mod notify;
 mod report;
 mod scheduler;
+mod security;
 mod state;
 mod tags;
 mod telegram;
@@ -229,6 +230,7 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
             certs: Arc::new(RwLock::new(certs)),
             maint: Arc::default(),
             domains: Arc::new(RwLock::new(domains)),
+            challenges: Arc::default(),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);

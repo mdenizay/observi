@@ -28,6 +28,8 @@ It runs happily on a Raspberry Pi.
 - **Telegram interaction** — mute or put a monitor under maintenance from the alert's buttons, and ask
   `/status`, `/down`, `/ssl`, `/domains` in the chat (long polling, nothing exposed publicly)
 - **Audit log** of who changed what, including failed logins
+- **Account security** — two-factor authentication (TOTP with recovery codes), **passkeys**, session management,
+  admin-issued password reset links and per-user **API tokens**
 - **SSL certificate monitoring** — HTTPS monitors show the certificate's expiry date; a distinct
   indicator appears when it is about to expire, and warnings go out through your notification channels
   14, 7, 3 and 1 days before expiry, when it expires, and when it is renewed
@@ -132,6 +134,7 @@ Environment variables (set them in `/etc/observi/observi.env`, then
 | `OBSERVI_RETENTION` | `90` | Heartbeat retention in days |
 | `OBSERVI_LANG` | `en` | Language of notifications: `en` or `tr` |
 | `OBSERVI_ADMIN_USER` / `OBSERVI_ADMIN_PASSWORD` | `admin` / generated | First superadmin, created only when the database has no users |
+| `OBSERVI_PUBLIC_URL` | derived from the request | Public URL (e.g. `https://status.example.com`); pins the passkey relying party behind proxies |
 | `OBSERVI_UPDATE_CHECK` | `1` | Set to `0` to stop checking GitHub for new releases |
 | `RUST_LOG` | `info` | Log level |
 

@@ -9,6 +9,7 @@ import { useTheme } from '@/hooks/use-theme'
 import { setUnauthorizedHandler } from '@/lib/api'
 import { lazyWithReload } from '@/lib/lazy'
 import { LoginPage } from '@/pages/login'
+import { ResetPage } from '@/pages/reset'
 import { NotFoundPage } from '@/pages/not-found'
 
 // Route-level code splitting keeps login light.
@@ -51,6 +52,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset" element={<ResetPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
             <Route path="/dashboard" element={<DashboardPage />} />

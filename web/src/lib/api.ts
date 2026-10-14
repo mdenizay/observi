@@ -24,7 +24,13 @@ import type {
   ReleasesResponse,
   UpdateInfo,
   User,
+  LoginResult,
+  SessionItem,
+  PasskeyItem,
+  TokenItem,
+  SecuritySummary,
 } from './types'
+import type { PublicKeyJSON } from './webauthn'
 
 export class ApiError extends Error {
   status: number
@@ -110,7 +116,38 @@ const del = <T>(p: string) => request<T>('DELETE', p)
 
 export const api = {
   login: (username: string, password: string) =>
-    post<User>('/auth/login', { username, password }, { silent401: true }),
+    post<LoginResult>('/auth/login', { username, password }, { silent401: true }),
+  login2fa: (challenge: string, code: string) => post<User>('/auth/login/2fa', { challenge, code }, { silent401: true }),
+  passkeyLoginOptions: (username?: string) =>
+    post<{ challenge_id: string; publicKey: PublicKeyJSON }>('/auth/passkey/options', username ? { username } : {}, { silent401: true }),
+  passkeyLogin: (challenge_id: string, credential: unknown) =>
+    post<User>('/auth/passkey/login', { challenge_id, credential }, { silent401: true }),
+  resetCheck: (token: string) =>
+    get<{ valid: boolean; name: string }>(`/auth/reset/${encodeURIComponent(token)}`, { silent401: true }),
+  resetPassword: (token: string, password: string) => post('/auth/reset', { token, password }, { silent401: true }),
+
+  security: () => get<SecuritySummary>('/auth/security'),
+  sessions: () => get<{ items: SessionItem[] }>('/auth/sessions'),
+  revokeSession: (id: string) => del(`/auth/sessions/${encodeURIComponent(id)}`),
+  revokeOtherSessions: () => post<{ revoked: number }>('/auth/sessions/revoke-others'),
+  twoFaSetup: () => post<{ secret: string; otpauth_url: string; qr_svg: string }>('/auth/2fa/setup'),
+  twoFaEnable: (code: string) => post<{ recovery_codes: string[] }>('/auth/2fa/enable', { code }),
+  twoFaDisable: (password: string, code: string) => post('/auth/2fa/disable', { password, code }),
+  twoFaRecoveryCodes: (password: string, code: string) =>
+    post<{ recovery_codes: string[] }>('/auth/2fa/recovery-codes', { password, code }),
+  passkeys: () => get<{ items: PasskeyItem[] }>('/auth/passkeys'),
+  deletePasskey: (id: string) => del(`/auth/passkeys/${encodeURIComponent(id)}`),
+  passkeyRegisterOptions: () => post<{ challenge_id: string; publicKey: PublicKeyJSON }>('/auth/passkeys/options'),
+  passkeyRegister: (challenge_id: string, name: string | undefined, credential: unknown) =>
+    post('/auth/passkeys/register', { challenge_id, ...(name ? { name } : {}), credential }),
+  tokens: () => get<{ items: TokenItem[] }>('/tokens'),
+  createToken: (b: { name: string; scope: 'read' | 'write'; expires_days?: number }) =>
+    post<{ token: string; item: TokenItem }>('/tokens', b),
+  deleteToken: (id: number) => del(`/tokens/${id}`),
+  userResetLink: (id: number, hours: number) =>
+    post<{ token: string; path: string; expires_at: number; username: string }>(`/users/${id}/reset-link`, { hours }),
+  userRevokeSessions: (id: number) => post<{ revoked?: number }>(`/users/${id}/sessions/revoke`),
+  userSecurityReset: (id: number) => post(`/users/${id}/security/reset`),
   logout: () => post<Record<string, never>>('/auth/logout'),
   me: () => get<User>('/auth/me', { silent401: true }),
   changePassword: (current: string, next: string) => post('/auth/password', { current, new: next }),

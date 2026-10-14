@@ -13,7 +13,7 @@ use futures_util::Stream;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::auth::{self, Admin, AuthUser, COOKIE, SESSION_TTL_MS};
+use crate::auth::{self, Admin, AuthUser, COOKIE};
 use crate::audit::Audit;
 use crate::brand;
 use crate::update;
@@ -125,6 +125,7 @@ pub fn router() -> Router<AppState> {
         .merge(crate::tags::router())
         .merge(crate::domain::router())
         .merge(crate::report::router())
+        .merge(crate::security::router())
         .fallback(|| async { ApiError::NotFound })
 }
 
@@ -164,7 +165,7 @@ async fn login(
     }
     let password = req.password;
     let uname = username.clone();
-    let found = st
+    let verified = st
         .db
         .call(move |c| {
             let row: Option<(i64, String)> = rusqlite::OptionalExtension::optional(c.query_row(
@@ -173,38 +174,23 @@ async fn login(
                 |r| Ok((r.get(0)?, r.get(1)?)),
             ))?;
             // Verify against a dummy hash when the user does not exist so timing is similar.
-            let ok = match &row {
-                Some((_, hash)) => auth::verify_password(&password, hash),
+            Ok(match row {
+                Some((id, hash)) => auth::verify_password(&password, &hash).then_some(id),
                 None => {
                     auth::dummy_verify(&password);
-                    false
+                    None
                 }
-            };
-            if !ok {
-                return Ok(None);
-            }
-            let id = row.map(|r| r.0).unwrap_or_default();
-            let token = auth::create_session(c, id)?;
-            Ok(Some(token))
+            })
         })
         .await?;
-    let Some(token) = found else {
+    let Some(user_id) = verified else {
         st.throttle.fail(&ip_key);
         st.throttle.fail(&user_key);
         audit.log_always("auth.login_failed", Some(&username), None);
         return Err(bad("invalid_credentials", "Invalid username or password"));
     };
     st.throttle.clear(&user_key);
-    let t = token.clone();
-    let user = st
-        .db
-        .call(move |c| auth::session_user(c, &t))
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
-    audit.actor(&user);
-    audit.log("auth.login", Some(("user", user.id, &user.username)), None);
-    let cookie = session_cookie(&token, SESSION_TTL_MS / 1000, is_https(&headers));
-    Ok(([(header::SET_COOKIE, cookie)], Json(user)).into_response())
+    crate::security::finish_password_login(&st, &audit, &headers, user_id).await
 }
 
 async fn logout(State(st): State<AppState>, audit: Audit, headers: HeaderMap) -> ApiResult<Response> {
@@ -267,9 +253,11 @@ async fn update_profile(
 async fn change_password(
     State(st): State<AppState>,
     audit: Audit,
+    headers: HeaderMap,
     AuthUser(user): AuthUser,
     Json(req): Json<PasswordReq>,
 ) -> ApiResult<Json<Value>> {
+    let keep = crate::security::current_token(&headers).map(|t| auth::session_public_id(&t)).unwrap_or_default();
     if req.new.chars().count() < 8 {
         return Err(bad("password_too_short", "Password must be at least 8 characters"));
     }
@@ -284,6 +272,11 @@ async fn change_password(
             c.execute(
                 "UPDATE users SET password_hash = ? WHERE id = ?",
                 rusqlite::params![auth::hash_password(&req.new)?, user.id],
+            )?;
+            // A new password signs out every other device.
+            c.execute(
+                "DELETE FROM sessions WHERE user_id = ? AND substr(token_hash, 1, 16) != ?",
+                rusqlite::params![user.id, keep],
             )?;
             Ok(true)
         })
@@ -1238,9 +1231,18 @@ async fn list_users(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Js
             for (id, username, name, role, created_at) in rows {
                 let ids = models::user_monitor_ids(c, id)?;
                 let gids = models::user_group_ids(c, id)?;
+                let two_factor: bool =
+                    c.query_row("SELECT EXISTS(SELECT 1 FROM user_totp WHERE user_id = ? AND enabled = 1)", [id], |r| r.get(0))?;
+                let passkeys: i64 = c.query_row("SELECT COUNT(*) FROM passkeys WHERE user_id = ?", [id], |r| r.get(0))?;
+                let last_seen: Option<i64> = c.query_row(
+                    "SELECT MAX(last_seen_at) FROM sessions WHERE user_id = ? AND expires_at > ?",
+                    rusqlite::params![id, crate::db::now_ms()],
+                    |r| r.get(0),
+                )?;
                 out.push(json!({
                     "id": id, "username": username, "name": name, "role": role,
                     "monitor_ids": ids, "group_ids": gids, "created_at": created_at,
+                    "two_factor": two_factor, "passkeys": passkeys, "last_seen_at": last_seen,
                 }));
             }
             Ok(out)

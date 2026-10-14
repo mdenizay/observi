@@ -1,7 +1,6 @@
 //! Just enough WebAuthn for passkeys: registration without attestation and
 //! ES256 (P-256) assertions with user verification. Everything is pure Rust, so
 //! the binary stays fully static.
-#![allow(dead_code)] // wired up with the security endpoints in the next step
 
 use anyhow::{Context, Result, bail};
 use base64::Engine;
