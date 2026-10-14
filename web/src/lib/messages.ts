@@ -11,12 +11,21 @@ export function translateMessage(m: string | null | undefined, lang: Lang): stri
   return trMessage(m)
 }
 
+const sslReasonTr: Record<string, string> = {
+  'certificate expired': 'sertifikanın süresi dolmuş',
+  'untrusted certificate': 'sertifika güvenilir değil',
+  'certificate does not match the domain': 'sertifika alan adıyla uyuşmuyor',
+  'invalid certificate': 'geçersiz sertifika',
+}
+
 function trMessage(m: string): string {
   let r: RegExpExecArray | null
   if (m === 'Timeout') return 'Zaman aşımı'
   if (m === 'Port open') return 'Port açık'
   if (m === 'Paused') return 'Duraklatıldı'
   if (m === 'Hosting account suspended') return 'Hosting hesabı askıya alınmış'
+  if ((r = /^SSL certificate problem \(site is reachable\): ([\s\S]*)$/.exec(m)))
+    return `SSL sertifikası sorunlu (site erişilebilir): ${sslReasonTr[r[1].trim()] ?? r[1]}`
   if ((r = /^Connection error: ([\s\S]*)$/.exec(m))) return `Bağlantı hatası: ${r[1]}`
   if ((r = /^Too many redirects: ([\s\S]*)$/.exec(m))) return `Çok fazla yönlendirme: ${r[1]}`
   if ((r = /^Client error: ([\s\S]*)$/.exec(m))) return `İstemci hatası: ${r[1]}`

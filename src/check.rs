@@ -11,6 +11,12 @@ pub struct CheckResult {
     pub ok: bool,
     pub latency_ms: Option<u32>,
     pub message: String,
+    /// Set when the TLS certificate failed validation (even if the site then responded).
+    pub cert_problem: Option<&'static str>,
+}
+
+fn success(latency: Option<u32>, message: impl Into<String>) -> CheckResult {
+    CheckResult { ok: true, latency_ms: latency, message: message.into(), cert_problem: None }
 }
 
 const MAX_BODY: usize = 2 * 1024 * 1024;
@@ -80,7 +86,31 @@ pub async fn run(clients: &Clients, m: &Monitor) -> CheckResult {
 }
 
 fn fail(latency: Option<u32>, message: impl Into<String>) -> CheckResult {
-    CheckResult { ok: false, latency_ms: latency, message: message.into() }
+    CheckResult { ok: false, latency_ms: latency, message: message.into(), cert_problem: None }
+}
+
+/// Classify a TLS certificate validation failure from the error chain.
+fn cert_problem(e: &reqwest::Error) -> Option<&'static str> {
+    let mut src: &dyn std::error::Error = e;
+    let mut text = src.to_string();
+    while let Some(next) = src.source() {
+        src = next;
+        text.push(' ');
+        text.push_str(&src.to_string());
+    }
+    let t = text.to_lowercase();
+    if !t.contains("invalid peer certificate") {
+        return None;
+    }
+    Some(if t.contains("expired") {
+        "certificate expired"
+    } else if t.contains("unknownissuer") || t.contains("unknown issuer") || t.contains("self") {
+        "untrusted certificate"
+    } else if t.contains("not valid for name") || t.contains("notvalidforname") {
+        "certificate does not match the domain"
+    } else {
+        "invalid certificate"
+    })
 }
 
 fn elapsed_ms(start: Instant) -> u32 {
@@ -106,10 +136,30 @@ fn describe(e: &reqwest::Error) -> String {
     }
 }
 
+/// A site whose certificate is bad but which still answers is reachable: report
+/// it as up with a note, and leave the certificate warnings to the SSL monitor.
 async fn http(clients: &Clients, m: &Monitor) -> CheckResult {
+    let first = http_once(clients, m, m.cfg.ignore_tls).await;
+    let Some(problem) = first.cert_problem.filter(|_| !m.cfg.ignore_tls) else {
+        return first;
+    };
+    let second = http_once(clients, m, true).await;
+    if second.ok {
+        CheckResult {
+            ok: true,
+            latency_ms: second.latency_ms,
+            message: format!("SSL certificate problem (site is reachable): {problem}"),
+            cert_problem: Some(problem),
+        }
+    } else {
+        second
+    }
+}
+
+async fn http_once(clients: &Clients, m: &Monitor, ignore_tls: bool) -> CheckResult {
     let cfg = &m.cfg;
     let url = cfg.url.as_deref().unwrap_or_default();
-    let client = match clients.get(cfg.ignore_tls, cfg.max_redirects) {
+    let client = match clients.get(ignore_tls, cfg.max_redirects) {
         Ok(c) => c,
         Err(e) => return fail(None, format!("Client error: {e}")),
     };
@@ -136,7 +186,11 @@ async fn http(clients: &Clients, m: &Monitor) -> CheckResult {
     let start = Instant::now();
     let mut resp = match req.send().await {
         Ok(r) => r,
-        Err(e) => return fail(Some(elapsed_ms(start)), describe(&e)),
+        Err(e) => {
+            let mut r = fail(Some(elapsed_ms(start)), describe(&e));
+            r.cert_problem = cert_problem(&e);
+            return r;
+        }
     };
     // cPanel serves a 200 "account suspended" page after a redirect; that's an outage.
     if resp.url().path().contains("/cgi-sys/suspendedpage.cgi") {
@@ -151,7 +205,7 @@ async fn http(clients: &Clients, m: &Monitor) -> CheckResult {
     if cfg.kind != MonitorType::Keyword {
         let latency = elapsed_ms(start);
         return if accepted {
-            CheckResult { ok: true, latency_ms: Some(latency), message: format!("{code} {reason}").trim().into() }
+            success(Some(latency), format!("{code} {reason}").trim())
         } else {
             fail(Some(latency), format!("HTTP {code} {reason}").trim().to_string())
         };
@@ -179,15 +233,14 @@ async fn http(clients: &Clients, m: &Monitor) -> CheckResult {
     let keyword = cfg.keyword.as_deref().unwrap_or_default();
     let found = text.contains(keyword);
     if found != cfg.invert_keyword {
-        CheckResult {
-            ok: true,
-            latency_ms: Some(latency),
-            message: if cfg.invert_keyword {
+        success(
+            Some(latency),
+            if cfg.invert_keyword {
                 format!("{code}, keyword \"{keyword}\" absent")
             } else {
                 format!("{code}, keyword \"{keyword}\" found")
             },
-        }
+        )
     } else if cfg.invert_keyword {
         fail(Some(latency), format!("Keyword \"{keyword}\" found on page"))
     } else {
@@ -201,7 +254,7 @@ async fn tcp(m: &Monitor) -> CheckResult {
     let start = Instant::now();
     let fut = tokio::net::TcpStream::connect((host, port));
     match tokio::time::timeout(Duration::from_secs(m.cfg.timeout as u64), fut).await {
-        Ok(Ok(_)) => CheckResult { ok: true, latency_ms: Some(elapsed_ms(start)), message: "Port open".into() },
+        Ok(Ok(_)) => success(Some(elapsed_ms(start)), "Port open"),
         Ok(Err(e)) => fail(Some(elapsed_ms(start)), format!("Connection error: {e}")),
         Err(_) => fail(None, "Timeout"),
     }

@@ -30,6 +30,7 @@ import {
   formatUptime,
   monitorTarget,
 } from '@/lib/format'
+import { sslReasonLabel } from '@/lib/cert'
 import { translateMessage } from '@/lib/messages'
 import type { Beat, CertInfo, MonitorEvent, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -91,20 +92,27 @@ function Kpi({
 }
 
 /** SSL certificate KPI (only for monitors that have certificate info). */
-function CertKpi({ cert, now }: { cert: CertInfo; now: number }) {
+function CertKpi({ cert, problem, now }: { cert: CertInfo | null; problem: string | null; now: number }) {
   const { t } = useI18n()
-  const date = formatDate(cert.expires_at)
-  const expired = cert.status === 'expired'
+  const expired = cert?.status === 'expired'
+  const date = cert ? formatDate(cert.expires_at) : ''
   const value = expired
-    ? t('ssl.expiredAgo', { count: Math.max(0, Math.abs(cert.days_left)) })
-    : t('ssl.days', { count: cert.days_left })
-  const tone = expired ? 'bad' : cert.status === 'expiring' ? 'warn' : undefined
+    ? t('ssl.expiredAgo', { count: Math.max(0, Math.abs(cert!.days_left)) })
+    : problem
+      ? t('ssl.invalid')
+      : t('ssl.days', { count: cert!.days_left })
+  const tone = expired || problem ? 'bad' : cert?.status === 'expiring' ? 'warn' : undefined
   const details = [
-    cert.issuer ? t('ssl.issuer', { issuer: cert.issuer }) : null,
-    t('ssl.checked', { time: formatRelative(cert.checked_at, now) }),
+    cert?.issuer ? t('ssl.issuer', { issuer: cert.issuer }) : null,
+    cert ? t('ssl.checked', { time: formatRelative(cert.checked_at, now) }) : null,
   ]
     .filter(Boolean)
     .join(' · ')
+  const main = problem
+    ? sslReasonLabel(problem)
+    : expired
+      ? t('ssl.expiredOn', { date })
+      : t('ssl.validUntil', { date })
   return (
     <Kpi
       label={t('ssl.title')}
@@ -114,9 +122,13 @@ function CertKpi({ cert, now }: { cert: CertInfo; now: number }) {
       sub={
         <div className="mt-0.5 min-w-0">
           <div className={cn('truncate text-xs', tone === 'bad' ? 'text-down' : tone === 'warn' ? 'text-pending' : 'text-muted-foreground')}>
-            {expired ? t('ssl.expiredOn', { date }) : t('ssl.validUntil', { date })}
+            {main}
           </div>
-          <div className="text-muted-foreground/80 truncate text-[11px]" title={details}>{details}</div>
+          {details && (
+            <div className="text-muted-foreground/80 truncate text-[11px]" title={details}>
+              {details}
+            </div>
+          )}
         </div>
       }
     />
@@ -436,7 +448,7 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
           <Kpi label={t('detail.kpiCurrent')} value={formatLatency(m.latency_ms)} />
           <Kpi label={t('detail.kpiAvg')} value={formatLatency(stats.data?.avg_latency_24h)} loading={stats.isPending} />
         </div>
-        {m.cert && <CertKpi cert={m.cert} now={now} />}
+        {(m.cert || m.ssl_problem) && <CertKpi cert={m.cert} problem={m.ssl_problem} now={now} />}
         <div className="grid grid-cols-3 gap-2">
           <Kpi label={t('detail.kpiUptime', { range: t('range.24h.short') })} value={formatUptime(stats.data?.uptime_24h)} loading={stats.isPending} />
           <Kpi label={t('detail.kpiUptime', { range: t('range.7d.short') })} value={formatUptime(stats.data?.uptime_7d)} loading={stats.isPending} />

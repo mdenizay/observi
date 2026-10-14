@@ -36,6 +36,8 @@ pub struct MonitorLive {
     pub retries: u32,
     /// When the monitor went down (for "down for X" in recovery notifications).
     pub down_since: Option<i64>,
+    /// Certificate validation problem seen by the last check, if any.
+    pub cert_problem: Option<String>,
 }
 
 impl MonitorLive {

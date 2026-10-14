@@ -20,6 +20,7 @@ It runs happily on a Raspberry Pi.
 - **SSL certificate monitoring** — HTTPS monitors show the certificate's expiry date; a distinct
   indicator appears when it is about to expire, and warnings go out through your notification channels
   14, 7, 3 and 1 days before expiry, when it expires, and when it is renewed
+  (a site that still answers with a bad certificate is reported as up, not down)
 - **Notifications** via Telegram, SMTP e-mail and webhooks (generic JSON, Discord, Slack)
 - **Updates** — the dashboard notifies superadmins about new releases; one-click or fully automatic
   updates on systemd installs (`install.sh`), `docker compose pull` instructions for Docker

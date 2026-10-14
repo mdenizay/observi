@@ -72,6 +72,10 @@ type Cert = {
   issuer: string | null; checked_at: number;
 }
 // MonitorSummary.cert: Cert | null
+// MonitorSummary.ssl_problem: string | null — set when the last check saw a certificate validation failure
+// ("certificate expired" | "untrusted certificate" | "certificate does not match the domain" | "invalid certificate").
+// A site that fails validation but still responds is reported as UP, with the message
+// "SSL certificate problem (site is reachable): <reason>".
 ```
 
 ## Live updates

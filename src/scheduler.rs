@@ -45,7 +45,7 @@ impl Scheduler {
 async fn run_loop(state: AppState, monitor: Monitor) {
     loop {
         let result = check::run(&state.clients, &monitor).await;
-        let pending = record_result(&state, &monitor, result.ok, result.latency_ms, result.message);
+        let pending = record_result(&state, &monitor, &result);
         let secs = if pending { monitor.cfg.retry_interval } else { monitor.cfg.interval };
         tokio::time::sleep(Duration::from_secs(secs as u64)).await;
     }
@@ -53,11 +53,13 @@ async fn run_loop(state: AppState, monitor: Monitor) {
 
 /// Apply a check result to the monitor's state machine. Returns true when the
 /// monitor is PENDING (so the caller should use the retry interval).
-fn record_result(state: &AppState, monitor: &Monitor, ok: bool, latency: Option<u32>, message: String) -> bool {
+fn record_result(state: &AppState, monitor: &Monitor, result: &check::CheckResult) -> bool {
+    let (ok, latency, message) = (result.ok, result.latency_ms, result.message.clone());
     let now = now_ms();
     let (beat, important, transition) = {
         let mut live = state.live.write().unwrap_or_else(|e| e.into_inner());
         let entry = live.entry(monitor.id).or_default();
+        entry.cert_problem = result.cert_problem.map(str::to_string);
         let settled = settled_status(entry);
         let s = if ok {
             entry.retries = 0;

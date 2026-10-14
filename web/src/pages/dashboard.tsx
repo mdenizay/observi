@@ -20,7 +20,7 @@ import { HeartbeatBar } from '@/components/heartbeat-bar'
 import { MonitorDetail } from '@/components/monitor-detail'
 import { Sparkline } from '@/components/sparkline'
 import { SslBadge } from '@/components/ssl-badge'
-import { certNeedsAttention } from '@/lib/cert'
+import { sslIsBad, sslNeedsAttention } from '@/lib/cert'
 import { StatusBadge, statusDot } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -143,7 +143,7 @@ const MonitorCard = memo(function MonitorCard({
       <div className="flex items-center gap-2.5">
         <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
-        <SslBadge cert={m.cert} className="max-w-[7.5rem]" />
+        <SslBadge monitor={m} className="max-w-[7.5rem]" />
         <StatusBadge status={status} className="shrink-0" />
       </div>
       <div className="text-muted-foreground -mt-1.5 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
@@ -236,7 +236,7 @@ const MonitorRow = memo(function MonitorRow({
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{m.name}</span>
-            <SslBadge cert={m.cert} className="max-w-[7rem]" />
+            <SslBadge monitor={m} className="max-w-[7rem]" />
           </div>
           <div className="text-muted-foreground truncate text-xs">{monitorTarget(m) || '—'}</div>
         </div>
@@ -334,8 +334,8 @@ export function DashboardPage() {
     }
   }
 
-  const sslCount = useMemo(() => (monitors ?? []).filter((m) => certNeedsAttention(m.cert)).length, [monitors])
-  const sslExpired = useMemo(() => (monitors ?? []).some((m) => m.cert?.status === 'expired'), [monitors])
+  const sslCount = useMemo(() => (monitors ?? []).filter(sslNeedsAttention).length, [monitors])
+  const sslExpired = useMemo(() => (monitors ?? []).some(sslIsBad), [monitors])
 
   const counts = useMemo(() => {
     const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0 }
@@ -362,7 +362,7 @@ export function DashboardPage() {
     const byName = (a: MonitorSummary, b: MonitorSummary) => a.name.localeCompare(b.name, lang)
     return (monitors ?? [])
       .filter((m) => filter === null || effectiveStatus(m) === filter)
-      .filter((m) => !sslOnly || certNeedsAttention(m.cert))
+      .filter((m) => !sslOnly || sslNeedsAttention(m))
       .filter(
         (m) =>
           !term ||

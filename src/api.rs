@@ -285,6 +285,7 @@ fn summary_json(st: &AppState, m: &Monitor, groups: &GroupNames, beats: usize) -
         "message": l.and_then(|l| l.message.clone()),
         "uptime_24h": uptime,
         "cert": state_cert(st, m.id),
+        "ssl_problem": l.and_then(|l| l.cert_problem.clone()),
         "group_id": m.cfg.group_id,
         "group_name": m.cfg.group_id.and_then(|g| groups.get(&g)),
         "beats": recent,

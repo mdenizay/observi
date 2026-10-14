@@ -33,6 +33,8 @@ export interface MonitorSummary {
   message: string | null
   uptime_24h: number | null
   cert: CertInfo | null
+  /** Reason the last check's TLS validation failed (site still reachable), else null. */
+  ssl_problem: string | null
   group_id: number | null
   group_name: string | null
   beats: Beat[]
