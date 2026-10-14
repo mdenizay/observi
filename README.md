@@ -17,6 +17,17 @@ It runs happily on a Raspberry Pi.
 - **Live dashboard** over Server-Sent Events with grid and list views, response-time charts,
   24h / 7d / 30d uptime, a 30-day uptime strip and incident history
 - **Command palette** (⌘K / Ctrl+K) to jump to any monitor or page, plus keyboard shortcuts
+- **Maintenance windows and mute** — one-off or weekly recurring; monitors show as "under maintenance"
+  (no alerts, excluded from uptime) or keep their status with notifications held back
+- **Domain expiry monitoring** — registration expiry via RDAP/WHOIS (including `.com.tr` / `.org.tr`), with
+  warnings at 60, 30, 14, 7 and 1 days
+- **Uptime reports** — per-monitor uptime, incidents and downtime over 7/30/90 days with CSV export, plus
+  scheduled **weekly and monthly digests** sent through your notification channels
+- **Tags and templates** — label monitors, filter by tag, and start new monitors from presets (Laravel `/up`,
+  WordPress, TCP services, …)
+- **Telegram interaction** — mute or put a monitor under maintenance from the alert's buttons, and ask
+  `/status`, `/down`, `/ssl`, `/domains` in the chat (long polling, nothing exposed publicly)
+- **Audit log** of who changed what, including failed logins
 - **SSL certificate monitoring** — HTTPS monitors show the certificate's expiry date; a distinct
   indicator appears when it is about to expire, and warnings go out through your notification channels
   14, 7, 3 and 1 days before expiry, when it expires, and when it is renewed

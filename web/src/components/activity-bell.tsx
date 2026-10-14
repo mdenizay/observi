@@ -6,6 +6,7 @@ import {
   CheckCheck,
   CircleCheck,
   CircleX,
+  Globe,
   Lock,
   ShieldAlert,
   ShieldCheck,
@@ -29,6 +30,9 @@ const kindStyle: Record<Activity['kind'], { icon: LucideIcon; cls: string }> = {
   ssl_expiring: { icon: Lock, cls: 'text-pending bg-pending/12' },
   ssl_expired: { icon: ShieldAlert, cls: 'text-down bg-down/10' },
   ssl_renewed: { icon: ShieldCheck, cls: 'text-up bg-up/10' },
+  domain_expiring: { icon: Globe, cls: 'text-pending bg-pending/12' },
+  domain_expired: { icon: Globe, cls: 'text-down bg-down/10' },
+  domain_renewed: { icon: Globe, cls: 'text-up bg-up/10' },
 }
 
 function Item({ a, unread, now, onOpen }: { a: Activity; unread: boolean; now: number; onOpen: () => void }) {
@@ -54,6 +58,17 @@ function Item({ a, unread, now, onOpen }: { a: Activity; unread: boolean; now: n
     case 'ssl_expired':
       title = t('act.sslExpired', { name })
       sub = d?.expires_at ? t('ssl.expiredOn', { date: formatDate(d.expires_at) }) : null
+      break
+    case 'domain_expiring':
+      title = t('act.domainExpiring', { domain: d?.domain ?? name, count: Math.max(0, d?.days_left ?? 0) })
+      sub = d?.expires_at ? t('ssl.validUntil', { date: formatDate(d.expires_at) }) : null
+      break
+    case 'domain_expired':
+      title = t('act.domainExpired', { domain: d?.domain ?? name })
+      sub = d?.expires_at ? t('ssl.expiredOn', { date: formatDate(d.expires_at) }) : null
+      break
+    case 'domain_renewed':
+      title = t('act.domainRenewed', { domain: d?.domain ?? name, date: d?.expires_at ? formatDate(d.expires_at) : '—' })
       break
     default:
       title = t('act.sslRenewed', { name })

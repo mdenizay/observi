@@ -13,6 +13,13 @@ import type {
   NotificationInput,
   Role,
   Activity,
+  DomainItem,
+  ReportSettings,
+  ReportSummary,
+  AuditEntry,
+  MaintenanceInput,
+  MaintenanceWindow,
+  TagCount,
   BulkAction,
   ReleasesResponse,
   UpdateInfo,
@@ -117,7 +124,29 @@ export const api = {
     action: BulkAction
     group_id?: number | null
     notification_id?: number
+    duration_min?: number
+    tag?: string
   }) => post<{ affected: number }>('/monitors/bulk', body),
+  domains: () => get<{ items: DomainItem[] }>('/domains'),
+  domainsCheck: () => post<{ items: DomainItem[] }>('/domains/check'),
+  reportSummary: (days: number) => get<ReportSummary>(`/reports/summary?days=${days}`),
+  reportSettings: () => get<ReportSettings>('/reports/settings'),
+  saveReportSettings: (s: ReportSettings) => put<ReportSettings>('/reports/settings', s),
+  sendReport: (period: 'weekly' | 'monthly') => post<{ sent: number }>('/reports/send', { period }),
+  maintenanceList: () => get<{ items: MaintenanceWindow[] }>('/maintenance'),
+  maintenanceCreate: (w: MaintenanceInput) => post<MaintenanceWindow>('/maintenance', w),
+  maintenanceUpdate: (id: number, w: MaintenanceInput) => put<MaintenanceWindow>(`/maintenance/${id}`, w),
+  maintenanceDelete: (id: number) => del(`/maintenance/${id}`),
+  maintenanceEnd: (id: number) => post<MaintenanceWindow>(`/maintenance/${id}/end`),
+  tags: () => get<{ items: TagCount[] }>('/tags'),
+  audit: (p: { limit?: number; before?: number | null; action?: string; user?: string }) => {
+    const q = new URLSearchParams()
+    q.set('limit', String(p.limit ?? 50))
+    if (p.before) q.set('before', String(p.before))
+    if (p.action) q.set('action', p.action)
+    if (p.user) q.set('user', p.user)
+    return get<{ items: AuditEntry[]; next_before: number | null }>(`/audit?${q}`)
+  },
   activity: (limit = 30) => get<{ items: Activity[] }>(`/activity?limit=${limit}`),
   deleteMonitor: (id: number) => del(`/monitors/${id}`),
   pauseMonitor: (id: number) => post(`/monitors/${id}/pause`),

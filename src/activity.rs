@@ -29,6 +29,9 @@ fn kind_static(kind: &str) -> &'static str {
         "ssl_expiring" => "ssl_expiring",
         "ssl_expired" => "ssl_expired",
         "ssl_renewed" => "ssl_renewed",
+        "domain_expiring" => "domain_expiring",
+        "domain_expired" => "domain_expired",
+        "domain_renewed" => "domain_renewed",
         _ => "up",
     }
 }

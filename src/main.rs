@@ -1,15 +1,23 @@
 mod activity;
 mod api;
+mod audit;
 mod auth;
 mod brand;
 mod cert;
 mod check;
 mod db;
+mod domain;
 mod i18n;
+mod maintenance;
 mod models;
 mod notify;
+mod report;
 mod scheduler;
 mod state;
+mod tags;
+mod telegram;
+mod totp;
+mod webauthn;
 mod update;
 mod web;
 
@@ -201,6 +209,7 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
     rt.block_on(async move {
         let live = db.call(|c| scheduler::load_live(c)).await?;
         let certs = db.call(|c| cert::load(c)).await.unwrap_or_default();
+        let domains = db.call(|c| domain::load(c)).await.unwrap_or_default();
         let (events, _) = broadcast::channel(1024);
         let (writer_tx, writer_rx) = mpsc::channel(4096);
         let state = AppState {
@@ -218,6 +227,8 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
             shutdown: Arc::new(watch::channel(false).0),
             updater: Arc::new(update::Updater::new(db_path)),
             certs: Arc::new(RwLock::new(certs)),
+            maint: Arc::default(),
+            domains: Arc::new(RwLock::new(domains)),
         };
 
         let retention: i64 = env("OBSERVI_RETENTION", "90").parse().unwrap_or(90).max(31);
@@ -225,10 +236,14 @@ fn serve(db: Db, db_path: &str) -> Result<()> {
         tokio::spawn(scheduler::maintenance(state.clone(), retention));
         tokio::spawn(update::run(state.clone()));
         tokio::spawn(cert::run(state.clone()));
+        tokio::spawn(maintenance::run(state.clone()));
+        tokio::spawn(domain::run(state.clone()));
+        tokio::spawn(report::run(state.clone()));
+        tokio::spawn(telegram::run(state.clone()));
         scheduler::start_all(&state).await?;
 
         let app = Router::new()
-            .nest("/api", api::router())
+            .nest("/api", api::router().layer(axum::middleware::from_fn_with_state(state.clone(), audit::middleware)))
             .fallback(web::static_handler)
             .layer(axum::middleware::map_response(security_headers))
             .with_state(state.clone());

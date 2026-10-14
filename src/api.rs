@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::auth::{self, Admin, AuthUser, COOKIE, SESSION_TTL_MS};
+use crate::audit::Audit;
 use crate::brand;
 use crate::update;
 use crate::db::now_ms;
@@ -67,9 +68,20 @@ impl IntoResponse for ApiError {
     }
 }
 
-type ApiResult<T> = Result<T, ApiError>;
+pub(crate) type ApiResult<T> = Result<T, ApiError>;
 
-fn bad(code: &'static str, msg: impl Into<String>) -> ApiError {
+/// Display name of a row, for audit entries (empty when it no longer exists).
+async fn name_of(st: &AppState, table: &'static str, id: i64) -> String {
+    st.db
+        .call(move |c| {
+            Ok(c.query_row(&format!("SELECT name FROM {table} WHERE id = ?"), [id], |r| r.get::<_, String>(0))
+                .unwrap_or_default())
+        })
+        .await
+        .unwrap_or_default()
+}
+
+pub(crate) fn bad(code: &'static str, msg: impl Into<String>) -> ApiError {
     ApiError::Bad(code, msg.into())
 }
 
@@ -89,6 +101,7 @@ pub fn router() -> Router<AppState> {
         .route("/monitors/{id}/events", get(monitor_events))
         .route("/events", get(events))
         .route("/activity", get(activity_list))
+        .route("/audit", get(audit_list))
         .route("/monitors/bulk", post(bulk_monitors))
         .route("/version", get(version))
         .route("/update", get(update_status))
@@ -108,6 +121,10 @@ pub fn router() -> Router<AppState> {
         .route("/notifications", get(list_notifications).post(create_notification))
         .route("/notifications/test", post(test_notification))
         .route("/notifications/{id}", put(update_notification).delete(delete_notification))
+        .merge(crate::maintenance::router())
+        .merge(crate::tags::router())
+        .merge(crate::domain::router())
+        .merge(crate::report::router())
         .fallback(|| async { ApiError::NotFound })
 }
 
@@ -119,16 +136,7 @@ struct LoginReq {
     password: String,
 }
 
-fn client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("cf-connecting-ip")
-        .or_else(|| headers.get("x-forwarded-for"))
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .unwrap_or("local")
-        .trim()
-        .to_string()
-}
+use crate::audit::client_ip;
 
 fn is_https(headers: &HeaderMap) -> bool {
     headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https")
@@ -141,11 +149,17 @@ fn session_cookie(token: &str, max_age_s: i64, secure: bool) -> String {
     )
 }
 
-async fn login(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<LoginReq>) -> ApiResult<Response> {
+async fn login(
+    State(st): State<AppState>,
+    audit: Audit,
+    headers: HeaderMap,
+    Json(req): Json<LoginReq>,
+) -> ApiResult<Response> {
     let username = req.username.trim().to_lowercase();
     let ip_key = format!("ip:{}", client_ip(&headers));
     let user_key = format!("user:{username}");
     if st.throttle.blocked(&ip_key) || st.throttle.blocked(&user_key) {
+        audit.log_always("auth.login_blocked", Some(&username), None);
         return Err(ApiError::TooMany);
     }
     let password = req.password;
@@ -177,6 +191,7 @@ async fn login(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<L
     let Some(token) = found else {
         st.throttle.fail(&ip_key);
         st.throttle.fail(&user_key);
+        audit.log_always("auth.login_failed", Some(&username), None);
         return Err(bad("invalid_credentials", "Invalid username or password"));
     };
     st.throttle.clear(&user_key);
@@ -186,11 +201,13 @@ async fn login(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<L
         .call(move |c| auth::session_user(c, &t))
         .await?
         .ok_or(ApiError::Unauthorized)?;
+    audit.actor(&user);
+    audit.log("auth.login", Some(("user", user.id, &user.username)), None);
     let cookie = session_cookie(&token, SESSION_TTL_MS / 1000, is_https(&headers));
     Ok(([(header::SET_COOKIE, cookie)], Json(user)).into_response())
 }
 
-async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+async fn logout(State(st): State<AppState>, audit: Audit, headers: HeaderMap) -> ApiResult<Response> {
     let token = headers
         .get_all(header::COOKIE)
         .iter()
@@ -200,6 +217,11 @@ async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<Res
         .find(|(k, _)| *k == COOKIE)
         .map(|(_, v)| v.to_string());
     if let Some(token) = token {
+        let t = token.clone();
+        if let Some(user) = st.db.call(move |c| auth::session_user(c, &t)).await? {
+            audit.actor(&user);
+            audit.log("auth.logout", Some(("user", user.id, &user.username)), None);
+        }
         st.db.call(move |c| auth::delete_session(c, &token)).await?;
     }
     let cookie = session_cookie("", 0, is_https(&headers));
@@ -223,6 +245,7 @@ struct ProfileReq {
 
 async fn update_profile(
     State(st): State<AppState>,
+    audit: Audit,
     AuthUser(user): AuthUser,
     Json(req): Json<ProfileReq>,
 ) -> ApiResult<Json<User>> {
@@ -237,17 +260,20 @@ async fn update_profile(
     st.db
         .call(move |c| Ok(c.execute("UPDATE users SET name = ? WHERE id = ?", rusqlite::params![n, user.id])?))
         .await?;
+    audit.log("auth.profile_updated", Some(("user", user.id, &user.username)), None);
     Ok(Json(User { name, ..user }))
 }
 
 async fn change_password(
     State(st): State<AppState>,
+    audit: Audit,
     AuthUser(user): AuthUser,
     Json(req): Json<PasswordReq>,
 ) -> ApiResult<Json<Value>> {
     if req.new.chars().count() < 8 {
         return Err(bad("password_too_short", "Password must be at least 8 characters"));
     }
+    let (uid, uname) = (user.id, user.username.clone());
     let ok = st
         .db
         .call(move |c| {
@@ -265,12 +291,17 @@ async fn change_password(
     if !ok {
         return Err(bad("current_password_wrong", "Current password is incorrect"));
     }
+    audit.log("auth.password_changed", Some(("user", uid, &uname)), None);
     Ok(Json(json!({})))
 }
 
 // ---------- monitors ----------
 
 /// Monitor ids visible to the user, or None meaning "all" (superadmin).
+pub(crate) async fn visible_for(st: &AppState, user: &User) -> ApiResult<Option<HashSet<i64>>> {
+    visible_ids(st, user).await
+}
+
 async fn visible_ids(st: &AppState, user: &User) -> ApiResult<Option<HashSet<i64>>> {
     if user.is_admin() {
         return Ok(None);
@@ -287,11 +318,19 @@ async fn ensure_visible(st: &AppState, user: &User, id: i64) -> ApiResult<()> {
     }
 }
 
-fn summary_json(st: &AppState, m: &Monitor, groups: &GroupNames, beats: usize) -> Value {
+fn summary_json(st: &AppState, m: &Monitor, look: &Lookups, beats: usize) -> Value {
     let live = st.live.read().unwrap_or_else(|e| e.into_inner());
     let uptime = st.uptime24.read().unwrap_or_else(|e| e.into_inner()).get(&m.id).copied();
     let l = live.get(&m.id);
-    let status = if !m.active { Some(PAUSED) } else { l.and_then(|l| l.status) };
+    let maint = st.maintenance_for(m.id);
+    let under_maintenance = maint.as_ref().is_some_and(|a| a.kind == crate::maintenance::Kind::Maintenance);
+    let status = if !m.active {
+        Some(PAUSED)
+    } else if under_maintenance {
+        Some(crate::state::MAINT)
+    } else {
+        l.and_then(|l| l.status)
+    };
     let recent: Vec<&Beat> = l
         .map(|l| {
             let skip = l.beats.len().saturating_sub(beats);
@@ -313,9 +352,12 @@ fn summary_json(st: &AppState, m: &Monitor, groups: &GroupNames, beats: usize) -
         "message": l.and_then(|l| l.message.clone()),
         "uptime_24h": uptime,
         "cert": state_cert(st, m.id),
+        "domain": state_domain(st, m),
         "ssl_problem": l.and_then(|l| l.cert_problem.clone()),
         "group_id": m.cfg.group_id,
-        "group_name": m.cfg.group_id.and_then(|g| groups.get(&g)),
+        "group_name": m.cfg.group_id.and_then(|g| look.groups.get(&g)),
+        "tags": look.tags.get(&m.id).cloned().unwrap_or_default(),
+        "maintenance": maint.filter(|_| m.active).map(|a| json!({ "id": a.id, "kind": a.kind, "name": a.name, "until": a.until })),
         "beats": recent,
     })
 }
@@ -330,17 +372,32 @@ fn state_cert(st: &AppState, id: i64) -> Value {
         .unwrap_or(Value::Null)
 }
 
-type GroupNames = std::collections::HashMap<i64, String>;
+fn state_domain(st: &AppState, m: &Monitor) -> Value {
+    let now = now_ms();
+    let Some(name) = crate::domain::registrable(m) else { return Value::Null };
+    st.domains
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&name)
+        .map(|d| d.to_json(&name, now))
+        .unwrap_or(Value::Null)
+}
 
-fn group_names(c: &rusqlite::Connection) -> anyhow::Result<GroupNames> {
+/// Names and labels attached to monitors, loaded once per request.
+struct Lookups {
+    groups: std::collections::HashMap<i64, String>,
+    tags: std::collections::HashMap<i64, Vec<String>>,
+}
+
+fn lookups(c: &rusqlite::Connection) -> anyhow::Result<Lookups> {
     let mut st = c.prepare_cached("SELECT id, name FROM groups")?;
-    let map = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
-    Ok(map)
+    let groups = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+    Ok(Lookups { groups, tags: crate::tags::tags_map(c)? })
 }
 
 async fn list_monitors(State(st): State<AppState>, AuthUser(user): AuthUser) -> ApiResult<Json<Vec<Value>>> {
     let visible = visible_ids(&st, &user).await?;
-    let (monitors, groups) = st.db.call(|c| Ok((models::list_monitors(c)?, group_names(c)?))).await?;
+    let (monitors, groups) = st.db.call(|c| Ok((models::list_monitors(c)?, lookups(c)?))).await?;
     Ok(Json(
         monitors
             .iter()
@@ -356,7 +413,7 @@ async fn monitor_full(st: &AppState, id: i64) -> ApiResult<Value> {
         .call(move |c| {
             let m = models::get_monitor(c, id)?;
             let n = models::monitor_notification_ids(c, id)?;
-            Ok((m, n, group_names(c)?))
+            Ok((m, n, lookups(c)?))
         })
         .await?;
     let m = m.ok_or(ApiError::NotFound)?;
@@ -392,16 +449,21 @@ struct MonitorReq {
     cfg: MonitorConfig,
     #[serde(default)]
     notification_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
 }
 
 async fn create_monitor(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Json(req): Json<MonitorReq>,
 ) -> ApiResult<Json<Value>> {
     let cfg = req.cfg.validate()?;
     let nids = req.notification_ids;
+    let tags = req.tags.map(crate::tags::normalize).transpose()?;
     let c2 = cfg.clone();
+    let mname = cfg.name.clone();
     let id = st
         .db
         .call(move |c| {
@@ -412,6 +474,9 @@ async fn create_monitor(
                 None => notify::default_ids(&tx)?,
             };
             models::set_monitor_notifications(&tx, id, &nids)?;
+            if let Some(t) = &tags {
+                crate::tags::set_monitor_tags(&tx, id, t)?;
+            }
             tx.commit()?;
             Ok(id)
         })
@@ -419,18 +484,22 @@ async fn create_monitor(
     st.live.write().unwrap_or_else(|e| e.into_inner()).entry(id).or_default();
     st.scheduler.start(&st, Monitor { id, active: true, cfg }, Duration::ZERO);
     st.notify_monitors_changed();
+    audit.log("monitor.create", Some(("monitor", id, &mname)), None);
     Ok(Json(monitor_full(&st, id).await?))
 }
 
 async fn update_monitor(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Path(id): Path<i64>,
     Json(req): Json<MonitorReq>,
 ) -> ApiResult<Json<Value>> {
     let cfg = req.cfg.validate()?;
     let nids = req.notification_ids;
+    let tags = req.tags.map(crate::tags::normalize).transpose()?;
     let c2 = cfg.clone();
+    let mname = cfg.name.clone();
     let active = st
         .db
         .call(move |c| {
@@ -440,6 +509,9 @@ async fn update_monitor(
             }
             if let Some(n) = nids {
                 models::set_monitor_notifications(&tx, id, &n)?;
+            }
+            if let Some(t) = &tags {
+                crate::tags::set_monitor_tags(&tx, id, t)?;
             }
             let active: bool = tx.query_row("SELECT active FROM monitors WHERE id = ?", [id], |r| r.get(0))?;
             tx.commit()?;
@@ -451,10 +523,12 @@ async fn update_monitor(
         st.scheduler.start(&st, Monitor { id, active, cfg }, Duration::ZERO);
     }
     st.notify_monitors_changed();
+    audit.log("monitor.update", Some(("monitor", id, &mname)), None);
     Ok(Json(monitor_full(&st, id).await?))
 }
 
-async fn delete_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn delete_monitor(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    let mname = name_of(&st, "monitors", id).await;
     st.scheduler.stop(id);
     let n = st
         .db
@@ -469,10 +543,11 @@ async fn delete_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): P
         return Err(ApiError::NotFound);
     }
     st.notify_monitors_changed();
+    audit.log("monitor.delete", Some(("monitor", id, &mname)), None);
     Ok(Json(json!({})))
 }
 
-async fn pause_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn pause_monitor(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
     let n = st
         .db
         .call(move |c| Ok(c.execute("UPDATE monitors SET active = 0 WHERE id = ? AND active = 1", [id])?))
@@ -480,11 +555,12 @@ async fn pause_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): Pa
     if n > 0 {
         scheduler::pause(&st, id);
         st.notify_monitors_changed();
+        audit.log("monitor.pause", Some(("monitor", id, &name_of(&st, "monitors", id).await)), None);
     }
     Ok(Json(json!({})))
 }
 
-async fn resume_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn resume_monitor(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
     let m = st
         .db
         .call(move |c| {
@@ -493,8 +569,10 @@ async fn resume_monitor(State(st): State<AppState>, Admin(_): Admin, Path(id): P
         })
         .await?
         .ok_or(ApiError::NotFound)?;
+    let mname = m.cfg.name.clone();
     st.scheduler.start(&st, m, Duration::ZERO);
     st.notify_monitors_changed();
+    audit.log("monitor.resume", Some(("monitor", id, &mname)), None);
     Ok(Json(json!({})))
 }
 
@@ -646,6 +724,28 @@ async fn activity_list(
     Ok(Json(json!({ "items": items })))
 }
 
+// ---------- audit log ----------
+
+#[derive(Deserialize)]
+struct AuditQuery {
+    limit: Option<usize>,
+    before: Option<i64>,
+    action: Option<String>,
+    user: Option<String>,
+}
+
+async fn audit_list(State(st): State<AppState>, Admin(_): Admin, Query(q): Query<AuditQuery>) -> ApiResult<Json<Value>> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let rows = st
+        .db
+        .call(move |c| crate::audit::list(c, limit + 1, q.before, q.action.as_deref(), q.user.as_deref()))
+        .await?;
+    let more = rows.len() > limit;
+    let items: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_before = if more { items.last().map(|r| r.id) } else { None };
+    Ok(Json(json!({ "items": items, "next_before": next_before })))
+}
+
 // ---------- bulk monitor actions ----------
 
 #[derive(Deserialize)]
@@ -656,11 +756,15 @@ struct BulkReq {
     group_id: Option<i64>,
     #[serde(default)]
     notification_id: Option<i64>,
+    #[serde(default)]
+    duration_min: Option<i64>,
+    #[serde(default)]
+    tag: Option<String>,
 }
 
 const BULK_MAX: usize = 500;
 
-async fn bulk_monitors(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<BulkReq>) -> ApiResult<Json<Value>> {
+async fn bulk_monitors(State(st): State<AppState>, audit: Audit, Admin(admin): Admin, Json(req): Json<BulkReq>) -> ApiResult<Json<Value>> {
     let mut ids = req.ids;
     ids.sort_unstable();
     ids.dedup();
@@ -669,10 +773,22 @@ async fn bulk_monitors(State(st): State<AppState>, Admin(_): Admin, Json(req): J
         return Err(bad("no_selection", "Select at least one monitor"));
     }
     let action = req.action.clone();
-    if !matches!(action.as_str(), "move" | "pause" | "resume" | "delete" | "notify_add" | "notify_remove") {
+    if !matches!(
+        action.as_str(),
+        "move" | "pause" | "resume" | "delete" | "notify_add" | "notify_remove" | "maintenance" | "mute" | "end_maintenance" | "tag_add" | "tag_remove"
+    ) {
         return Err(bad("bulk_action_invalid", "Unknown bulk action"));
     }
     let (group_id, notification_id) = (req.group_id, req.notification_id);
+    let minutes = req.duration_min.unwrap_or(60);
+    let actor = admin.username.clone();
+    let tag = match action.as_str() {
+        "tag_add" | "tag_remove" => {
+            let tags = crate::tags::normalize(vec![req.tag.clone().unwrap_or_default()])?;
+            Some(tags.into_iter().next().ok_or_else(|| bad("tag_required", "Enter a tag"))?)
+        }
+        _ => None,
+    };
 
     // Apply in one transaction; collect what the scheduler must do afterwards.
     let ids2 = ids.clone();
@@ -705,6 +821,24 @@ async fn bulk_monitors(State(st): State<AppState>, Admin(_): Admin, Json(req): J
                         if tx.execute("UPDATE monitors SET active = ? WHERE id = ? AND active = ?", rusqlite::params![to, id, from])? > 0 {
                             changed.push(*id);
                         }
+                    }
+                }
+                "maintenance" | "mute" => {
+                    if !existing.is_empty() {
+                        let kind = if action == "mute" { crate::maintenance::Kind::Mute } else { crate::maintenance::Kind::Maintenance };
+                        crate::maintenance::create_quick(&tx, kind, &existing, minutes, &actor)?;
+                        changed = existing.clone();
+                    }
+                }
+                "end_maintenance" => {
+                    if crate::maintenance::end_for_monitors(&tx, &existing)? > 0 {
+                        changed = existing.clone();
+                    }
+                }
+                "tag_add" | "tag_remove" => {
+                    if let Some(t) = &tag {
+                        crate::tags::bulk(&tx, &existing, t, action == "tag_add")?;
+                        changed = existing.clone();
                     }
                 }
                 "delete" => {
@@ -775,7 +909,23 @@ async fn bulk_monitors(State(st): State<AppState>, Admin(_): Admin, Json(req): J
         }
         _ => {}
     }
+    if matches!(req.action.as_str(), "maintenance" | "mute" | "end_maintenance") {
+        crate::maintenance::refresh(&st).await;
+    }
     st.notify_monitors_changed();
+    audit.log(
+        "monitor.bulk",
+        None,
+        Some(json!({
+            "action": req.action,
+            "affected": changed.len(),
+            "ids": changed.iter().take(50).collect::<Vec<_>>(),
+            "group_id": req.group_id,
+            "notification_id": req.notification_id,
+            "duration_min": req.duration_min,
+            "tag": req.tag,
+        })),
+    );
     Ok(Json(json!({ "affected": changed.len() })))
 }
 
@@ -852,7 +1002,8 @@ async fn update_check(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<
     update_json(&st).await
 }
 
-async fn update_apply(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+async fn update_apply(State(st): State<AppState>, audit: Audit, Admin(_): Admin) -> ApiResult<Json<Value>> {
+    let target = st.updater.status(false).latest;
     update::request(&st).map_err(|code| {
         let msg = match code {
             "update_not_supported" => "This installation cannot update itself",
@@ -861,6 +1012,7 @@ async fn update_apply(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<
         };
         bad(code, msg)
     })?;
+    audit.log("update.apply", None, Some(json!({ "from": update::CURRENT, "to": target })));
     update_json(&st).await
 }
 
@@ -890,10 +1042,12 @@ struct UpdateSettingsReq {
 
 async fn update_settings(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Json(req): Json<UpdateSettingsReq>,
 ) -> ApiResult<Json<Value>> {
     st.db.call(move |c| update::set_auto_update(c, req.auto_update)).await?;
+    audit.log("update.auto", None, Some(json!({ "auto_update": req.auto_update })));
     update_json(&st).await
 }
 
@@ -914,8 +1068,10 @@ struct BrandReq {
     name: String,
 }
 
-async fn put_branding(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<BrandReq>) -> ApiResult<Json<Value>> {
+async fn put_branding(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Json(req): Json<BrandReq>) -> ApiResult<Json<Value>> {
+    let new_name = req.name.trim().to_string();
     st.db.call(move |c| Ok(brand::set_name(c, &req.name))).await??;
+    audit.log("settings.branding", None, Some(json!({ "name": new_name })));
     current_brand(&st).await
 }
 
@@ -935,6 +1091,7 @@ async fn get_logo(State(st): State<AppState>) -> ApiResult<Response> {
 
 async fn put_logo(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     headers: HeaderMap,
     body: Bytes,
@@ -946,11 +1103,13 @@ async fn put_logo(
     let mime = brand::sniff(ct, &body)
         .ok_or_else(|| bad("logo_type_unsupported", "Logo must be a PNG, JPEG, WebP, GIF or SVG image"))?;
     st.db.call(move |c| brand::set_logo(c, mime, &body)).await?;
+    audit.log("settings.branding", None, Some(json!({ "logo": "uploaded" })));
     current_brand(&st).await
 }
 
-async fn delete_logo(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<Json<Value>> {
+async fn delete_logo(State(st): State<AppState>, audit: Audit, Admin(_): Admin) -> ApiResult<Json<Value>> {
     st.db.call(|c| brand::clear_logo(c)).await?;
+    audit.log("settings.branding", None, Some(json!({ "logo": "removed" })));
     current_brand(&st).await
 }
 
@@ -975,8 +1134,9 @@ async fn list_groups(State(st): State<AppState>, Admin(_): Admin) -> ApiResult<J
     Ok(Json(json!(groups)))
 }
 
-async fn create_group(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<GroupReq>) -> ApiResult<Json<Value>> {
+async fn create_group(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Json(req): Json<GroupReq>) -> ApiResult<Json<Value>> {
     let name = group_name(req.name)?.ok_or_else(|| bad("group_name_required", "Group name is required"))?;
+    let gname = name.clone();
     let id = st
         .db
         .call(move |c| {
@@ -991,11 +1151,13 @@ async fn create_group(State(st): State<AppState>, Admin(_): Admin, Json(req): Js
         })
         .await?;
     st.notify_monitors_changed();
+    audit.log("group.create", Some(("group", id, &gname)), None);
     Ok(Json(json!({ "id": id })))
 }
 
 async fn update_group(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Path(id): Path<i64>,
     Json(req): Json<GroupReq>,
@@ -1023,15 +1185,18 @@ async fn update_group(
         return Err(ApiError::NotFound);
     }
     st.notify_monitors_changed();
+    audit.log("group.update", Some(("group", id, &name_of(&st, "groups", id).await)), None);
     Ok(Json(json!({})))
 }
 
-async fn delete_group(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn delete_group(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    let gname = name_of(&st, "groups", id).await;
     let n = st.db.call(move |c| Ok(c.execute("DELETE FROM groups WHERE id = ?", [id])?)).await?;
     if n == 0 {
         return Err(ApiError::NotFound);
     }
     st.notify_monitors_changed();
+    audit.log("group.delete", Some(("group", id, &gname)), None);
     Ok(Json(json!({})))
 }
 
@@ -1088,8 +1253,10 @@ fn valid_username(u: &str) -> bool {
     (2..=64).contains(&u.len()) && u.chars().all(|c| c.is_ascii_alphanumeric() || "._-@".contains(c))
 }
 
-async fn create_user(State(st): State<AppState>, Admin(_): Admin, Json(req): Json<CreateUserReq>) -> ApiResult<Json<Value>> {
+async fn create_user(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Json(req): Json<CreateUserReq>) -> ApiResult<Json<Value>> {
     let username = req.username.trim().to_lowercase();
+    let uname = username.clone();
+    let role_name = req.role.as_str();
     let name = req.name.trim().to_string();
     if !valid_username(&username) {
         return Err(bad("username_invalid", "Username must be 2-64 characters (letters, digits, . _ - @)"));
@@ -1115,13 +1282,17 @@ async fn create_user(State(st): State<AppState>, Admin(_): Admin, Json(req): Jso
         })
         .await?;
     match res {
-        Some(id) => Ok(Json(json!({ "id": id }))),
+        Some(id) => {
+            audit.log("user.create", Some(("user", id, &uname)), Some(json!({ "role": role_name })));
+            Ok(Json(json!({ "id": id })))
+        }
         None => Err(bad("username_taken", "This username is already taken")),
     }
 }
 
 async fn update_user(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(admin): Admin,
     Path(id): Path<i64>,
     Json(req): Json<UpdateUserReq>,
@@ -1133,6 +1304,13 @@ async fn update_user(
         && !p.is_empty() && p.chars().count() < 8 {
             return Err(bad("password_too_short", "Password must be at least 8 characters"));
         }
+    let changed = json!({
+        "name": req.name.is_some(),
+        "role": req.role.map(|r| r.as_str()),
+        "password_reset": req.password.as_ref().is_some_and(|p| !p.is_empty()),
+        "monitors": req.monitor_ids.is_some(),
+        "groups": req.group_ids.is_some(),
+    });
     let found = st
         .db
         .call(move |c| {
@@ -1169,17 +1347,20 @@ async fn update_user(
         return Err(ApiError::NotFound);
     }
     st.notify_monitors_changed();
+    audit.log("user.update", Some(("user", id, &name_of(&st, "users", id).await)), Some(changed));
     Ok(Json(json!({})))
 }
 
-async fn delete_user(State(st): State<AppState>, Admin(admin): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn delete_user(State(st): State<AppState>, audit: Audit, Admin(admin): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
     if id == admin.id {
         return Err(bad("cannot_delete_self", "You cannot delete your own account"));
     }
+    let uname = name_of(&st, "users", id).await;
     let n = st.db.call(move |c| Ok(c.execute("DELETE FROM users WHERE id = ?", [id])?)).await?;
     if n == 0 {
         return Err(ApiError::NotFound);
     }
+    audit.log("user.delete", Some(("user", id, &uname)), None);
     Ok(Json(json!({})))
 }
 
@@ -1200,27 +1381,35 @@ fn validate_notification(n: &mut NotificationInput) -> ApiResult<()> {
 
 async fn create_notification(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Json(mut n): Json<NotificationInput>,
 ) -> ApiResult<Json<Value>> {
     validate_notification(&mut n)?;
+    let nname = n.name.clone();
     let id = st.db.call(move |c| notify::save(c, None, &n)).await?;
+    audit.log("notification.create", Some(("notification", id, &nname)), None);
     Ok(Json(json!({ "id": id })))
 }
 
 async fn update_notification(
     State(st): State<AppState>,
+    audit: Audit,
     Admin(_): Admin,
     Path(id): Path<i64>,
     Json(mut n): Json<NotificationInput>,
 ) -> ApiResult<Json<Value>> {
     validate_notification(&mut n)?;
+    let nname = n.name.clone();
     st.db.call(move |c| notify::save(c, Some(id), &n)).await.map_err(|_| ApiError::NotFound)?;
+    audit.log("notification.update", Some(("notification", id, &nname)), None);
     Ok(Json(json!({ "id": id })))
 }
 
-async fn delete_notification(State(st): State<AppState>, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+async fn delete_notification(State(st): State<AppState>, audit: Audit, Admin(_): Admin, Path(id): Path<i64>) -> ApiResult<Json<Value>> {
+    let nname = name_of(&st, "notifications", id).await;
     st.db.call(move |c| Ok(c.execute("DELETE FROM notifications WHERE id = ?", [id])?)).await?;
+    audit.log("notification.delete", Some(("notification", id, &nname)), None);
     Ok(Json(json!({})))
 }
 

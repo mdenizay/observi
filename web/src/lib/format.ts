@@ -9,6 +9,7 @@ export const beatToStatus: Record<BeatStatus, MonitorStatus> = {
   1: 'up',
   2: 'pending',
   3: 'paused',
+  4: 'maintenance',
 }
 
 const nfCache = new Map<string, Intl.NumberFormat>()

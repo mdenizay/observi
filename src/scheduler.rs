@@ -10,7 +10,7 @@ use tokio::task::AbortHandle;
 use crate::db::now_ms;
 use crate::models::{self, Monitor};
 use crate::state::{
-    AppState, Beat, BeatEvent, BeatRecord, DOWN, Event, MonitorLive, PAUSED, PENDING, RECENT_BEATS, UP, status_str,
+    AppState, Beat, BeatEvent, BeatRecord, DOWN, Event, MAINT, MonitorLive, PAUSED, PENDING, RECENT_BEATS, UP, status_str,
 };
 use crate::{check, notify};
 
@@ -56,6 +56,23 @@ async fn run_loop(state: AppState, monitor: Monitor) {
 fn record_result(state: &AppState, monitor: &Monitor, result: &check::CheckResult) -> bool {
     let (ok, latency, message) = (result.ok, result.latency_ms, result.message.clone());
     let now = now_ms();
+
+    // Under maintenance: keep measuring, but record a maintenance beat and leave
+    // the state machine and the alerts alone.
+    if state
+        .maintenance_for(monitor.id)
+        .is_some_and(|a| a.kind == crate::maintenance::Kind::Maintenance)
+    {
+        let beat = Beat { t: now, s: MAINT, l: latency, m: Some(message) };
+        {
+            let mut live = state.live.write().unwrap_or_else(|e| e.into_inner());
+            let entry = live.entry(monitor.id).or_default();
+            entry.cert_problem = result.cert_problem.map(str::to_string);
+            entry.push(beat.clone());
+        }
+        publish(state, monitor.id, beat, false);
+        return false;
+    }
     let (beat, important, transition) = {
         let mut live = state.live.write().unwrap_or_else(|e| e.into_inner());
         let entry = live.entry(monitor.id).or_default();
@@ -71,7 +88,7 @@ fn record_result(state: &AppState, monitor: &Monitor, result: &check::CheckResul
             DOWN
         };
         let changed = (s == UP || s == DOWN) && settled != Some(s);
-        let first = entry.beats.iter().all(|b| b.s == PAUSED);
+        let first = entry.beats.iter().all(|b| b.s == PAUSED || b.s == MAINT);
         let important = changed || (first && s != PENDING);
         let transition = if changed && (settled.is_some() || s == DOWN) {
             let down_for = if s == UP { entry.down_since.map(|t| now - t) } else { None };
@@ -266,6 +283,7 @@ pub async fn maintenance(state: AppState, retention_days: i64) {
                         [],
                     )?;
                     crate::activity::prune(c, cutoff)?;
+                    crate::audit::prune(c, now - 365 * 24 * 3600 * 1000)?;
                     c.execute_batch("PRAGMA optimize; PRAGMA wal_checkpoint(TRUNCATE);")?;
                 }
                 Ok(out)

@@ -139,6 +139,7 @@ function NotificationDialog({
   const [kind, setKind] = useState<NotificationKind>(item?.kind ?? 'telegram')
   const [cfg, setCfg] = useState<Cfg>(() => cfgFrom(item))
   const [isDefault, setIsDefault] = useState(item?.is_default ?? false)
+  const [digest, setDigest] = useState(item?.digest ?? true)
   const [applyExisting, setApplyExisting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -157,6 +158,7 @@ function NotificationDialog({
       name: name.trim(),
       kind,
       is_default: isDefault,
+      digest,
       apply_existing: applyExisting,
       config: buildConfig(kind, cfg),
     }
@@ -314,6 +316,13 @@ function NotificationDialog({
               onCheckedChange={setIsDefault}
             />
             <SwitchField
+              id="n-digest"
+              label={t('notif.digest')}
+              description={t('notif.digestHelp')}
+              checked={digest}
+              onCheckedChange={setDigest}
+            />
+            <SwitchField
               id="n-apply"
               label={t('notif.applyExisting')}
               description={t('notif.applyExistingDesc')}
@@ -434,6 +443,7 @@ export function NotificationsPage() {
                   <>
                     <span className="truncate">{n.name}</span>
                     {n.is_default && <Badge variant="secondary">{t('common.default')}</Badge>}
+                    {n.digest !== false && <Badge variant="outline" className="text-muted-foreground font-normal">{t('notif.reportsBadge')}</Badge>}
                   </>
                 }
                 subtitle={sum ? `${kindLabel(n.kind)} — ${sum}` : kindLabel(n.kind)}

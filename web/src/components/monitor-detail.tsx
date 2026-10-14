@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import { BellOff, Check, Copy, ExternalLink, Loader2, MoreHorizontal, Pause, Pencil, Play, Trash2, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
 import { LatencyChart } from '@/components/latency-chart'
+import { MaintenanceForm } from '@/components/maintenance-ui'
+import { maintenanceTip } from '@/lib/maintenance'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,9 +33,10 @@ import {
   formatUptime,
   monitorTarget,
 } from '@/lib/format'
+import { TagChip } from '@/components/tags'
 import { sslReasonLabel } from '@/lib/cert'
 import { translateMessage } from '@/lib/messages'
-import type { Beat, CertInfo, MonitorEvent, MonitorSummary } from '@/lib/types'
+import type { Beat, CertInfo, DomainInfo, MonitorEvent, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const ranges = [
@@ -88,6 +92,43 @@ function Kpi({
       )}
       {sub}
     </div>
+  )
+}
+
+/** Domain registration KPI (only for monitors whose host has a registrable domain). */
+function DomainKpi({ domain }: { domain: DomainInfo }) {
+  const { t } = useI18n()
+  const unknown = domain.status === 'unknown' || domain.expires_at == null
+  const expired = domain.status === 'expired'
+  const value = unknown
+    ? '—'
+    : expired
+      ? t('ssl.expiredAgo', { count: Math.max(0, Math.abs(domain.days_left ?? 0)) })
+      : t('ssl.days', { count: domain.days_left ?? 0 })
+  const tone = expired ? 'bad' : domain.status === 'expiring' ? 'warn' : undefined
+  const main = unknown
+    ? (domain.error ?? domain.name)
+    : expired
+      ? t('ssl.expiredOn', { date: formatDate(domain.expires_at!) })
+      : t('ssl.validUntil', { date: formatDate(domain.expires_at!) })
+  return (
+    <Kpi
+      label={`${t('dom.title')} · ${domain.name}`}
+      value={value}
+      tone={tone}
+      sub={
+        <div className="mt-0.5 min-w-0">
+          <div className={cn('text-xs [overflow-wrap:anywhere]', tone === 'bad' ? 'text-down' : tone === 'warn' ? 'text-pending' : 'text-muted-foreground')}>
+            {main}
+          </div>
+          {domain.registrar && (
+            <div className="text-muted-foreground/80 truncate text-[11px]" title={domain.registrar}>
+              {t('dom.registrar', { registrar: domain.registrar })}
+            </div>
+          )}
+        </div>
+      }
+    />
   )
 }
 
@@ -154,7 +195,7 @@ function dailyUptime(beats: Beat[], now: number): Day[] {
     acc.push({ up: 0, total: 0 })
   }
   for (const b of beats) {
-    if (b.s === 3) continue // paused doesn't count
+    if (b.s === 3 || b.s === 4) continue // paused / maintenance don't count
     let idx = -1
     for (let i = days.length - 1; i >= 0; i--) {
       if (b.t >= days[i].start) {
@@ -292,6 +333,39 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
   const now = useNow()
   const [hours, setHours] = useState<number>(24)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [maintOpen, setMaintOpen] = useState(false)
+  const [maintBusy, setMaintBusy] = useState(false)
+
+  const refreshMonitors = async () => {
+    await qc.invalidateQueries({ queryKey: ['monitors'] })
+    qc.invalidateQueries({ queryKey: ['monitor', m.id] })
+  }
+  const startMaintenance = async (minutes: number, muteOnly: boolean) => {
+    setMaintBusy(true)
+    try {
+      await api.bulkMonitors({ ids: [m.id], action: muteOnly ? 'mute' : 'maintenance', duration_min: minutes })
+      toast.success(muteOnly ? t('bulk.mutedN', { count: 1 }) : t('bulk.maintStarted', { count: 1 }))
+      setMaintOpen(false)
+      await refreshMonitors()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setMaintBusy(false)
+    }
+  }
+  const endMaintenance = async () => {
+    if (!m.maintenance) return
+    setMaintBusy(true)
+    try {
+      await api.maintenanceEnd(m.maintenance.id)
+      toast.success(t('maint.bannerEnded'))
+      await refreshMonitors()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setMaintBusy(false)
+    }
+  }
   const [toggling, setToggling] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -381,6 +455,13 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
             </Button>
           </div>
         )}
+        {m.tags?.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {m.tags.map((x) => (
+              <TagChip key={x} name={x} className="h-6 text-xs" />
+            ))}
+          </div>
+        )}
         {detail.data?.description && (
           <p className="text-muted-foreground mt-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap">{detail.data.description}</p>
         )}
@@ -407,6 +488,10 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-40">
+              <DropdownMenuItem onSelect={() => setMaintOpen(true)}>
+                <Wrench />
+                {t('maint.menu')}
+              </DropdownMenuItem>
               <DropdownMenuItem destructive onSelect={() => setConfirmDelete(true)}>
                 <Trash2 />
                 {t('common.delete')}
@@ -415,6 +500,41 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
           </DropdownMenu>
         </div>
       )}
+
+      {m.maintenance && (
+        <div
+          role="status"
+          className={cn(
+            'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3.5 py-2.5 text-sm',
+            m.maintenance.kind === 'maintenance' ? 'border-maint/35 bg-maint/[0.07]' : 'bg-muted/50',
+          )}
+        >
+          {m.maintenance.kind === 'maintenance' ? (
+            <Wrench className="text-maint size-4 shrink-0" />
+          ) : (
+            <BellOff className="text-muted-foreground size-4 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1">{maintenanceTip(m.maintenance, t)}</span>
+          {isAdmin && (
+            <Button size="xs" variant="outline" onClick={endMaintenance} disabled={maintBusy}>
+              {maintBusy && <Loader2 className="animate-spin" />}
+              {t('maint.endNow')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Dialog open={maintOpen} onOpenChange={setMaintOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('maint.menu')}</DialogTitle>
+            <DialogDescription>{m.name}</DialogDescription>
+          </DialogHeader>
+          <div className="-mx-3 -mb-3">
+            <MaintenanceForm idPrefix="drawer" busy={maintBusy} onApply={startMaintenance} />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Recent beats */}
       <section className="bg-card shadow-card rounded-xl border p-4">
@@ -448,7 +568,12 @@ export function MonitorDetail({ monitor: m }: { monitor: MonitorSummary }) {
           <Kpi label={t('detail.kpiCurrent')} value={formatLatency(m.latency_ms)} />
           <Kpi label={t('detail.kpiAvg')} value={formatLatency(stats.data?.avg_latency_24h)} loading={stats.isPending} />
         </div>
-        {(m.cert || m.ssl_problem) && <CertKpi cert={m.cert} problem={m.ssl_problem} now={now} />}
+        {(m.cert || m.ssl_problem || m.domain) && (
+          <div className={cn('grid gap-2', (m.cert || m.ssl_problem) && m.domain && 'sm:grid-cols-2')}>
+            {(m.cert || m.ssl_problem) && <CertKpi cert={m.cert} problem={m.ssl_problem} now={now} />}
+            {m.domain && <DomainKpi domain={m.domain} />}
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-2">
           <Kpi label={t('detail.kpiUptime', { range: t('range.24h.short') })} value={formatUptime(stats.data?.uptime_24h)} loading={stats.isPending} />
           <Kpi label={t('detail.kpiUptime', { range: t('range.7d.short') })} value={formatUptime(stats.data?.uptime_7d)} loading={stats.isPending} />

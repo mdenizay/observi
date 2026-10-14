@@ -11,6 +11,7 @@ const color: Record<number, string> = {
   1: 'bg-up',
   2: 'bg-pending',
   3: 'bg-paused',
+  4: 'bg-maint',
 }
 
 const sizes = {

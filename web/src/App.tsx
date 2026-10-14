@@ -18,6 +18,8 @@ const MonitorFormPage = lazyWithReload(() => import('@/pages/monitor-form').then
 const NotificationsPage = lazyWithReload(() => import('@/pages/notifications').then((m) => ({ default: m.NotificationsPage })))
 const SettingsPage = lazyWithReload(() => import('@/pages/settings').then((m) => ({ default: m.SettingsPage })))
 const GroupsPage = lazyWithReload(() => import('@/pages/groups').then((m) => ({ default: m.GroupsPage })))
+const MaintenancePage = lazyWithReload(() => import('@/pages/maintenance').then((m) => ({ default: m.MaintenancePage })))
+const ReportsPage = lazyWithReload(() => import('@/pages/reports').then((m) => ({ default: m.ReportsPage })))
 const UsersPage = lazyWithReload(() => import('@/pages/users').then((m) => ({ default: m.UsersPage })))
 
 /** Sends the user to /login on any 401 (except on /login). */
@@ -53,11 +55,13 @@ export function App() {
           <Route element={<AppShell />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/:id" element={<DashboardPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route element={<RequireSuperadmin />}>
               <Route path="/monitors/new" element={<MonitorFormPage key="new" />} />
               <Route path="/monitors/:id/edit" element={<MonitorFormPage key="edit" />} />
               <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/maintenance" element={<MaintenancePage />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
             </Route>

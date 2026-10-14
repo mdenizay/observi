@@ -116,6 +116,7 @@ impl FromRequestParts<AppState> for AuthUser {
             .call(move |c| session_user(c, &token))
             .await?
             .ok_or(ApiError::Unauthorized)?;
+        crate::audit::note_actor(parts, &user);
         Ok(AuthUser(user))
     }
 }

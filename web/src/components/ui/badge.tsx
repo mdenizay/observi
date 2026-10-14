@@ -14,6 +14,7 @@ const badgeVariants = cva(
         down: 'border-down/25 bg-down/10 text-down',
         pending: 'border-pending/25 bg-pending/10 text-pending',
         paused: 'border-paused/25 bg-paused/10 text-paused',
+        maint: 'border-maint/30 bg-maint/10 text-maint',
         muted: 'border-transparent bg-muted text-muted-foreground',
       },
     },

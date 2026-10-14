@@ -228,7 +228,7 @@ export function LatencyChart({ beats, hours, height = 220, className }: Props) {
             <span
               className={cn(
                 'size-2 rounded-full',
-                hb.s === 1 ? 'bg-up' : hb.s === 0 ? 'bg-down' : hb.s === 2 ? 'bg-pending' : 'bg-paused',
+                hb.s === 1 ? 'bg-up' : hb.s === 0 ? 'bg-down' : hb.s === 2 ? 'bg-pending' : hb.s === 4 ? 'bg-maint' : 'bg-paused',
               )}
             />
             {beatLabel(hb.s)}

@@ -64,6 +64,13 @@ pub struct NotificationInput {
     pub is_default: bool,
     #[serde(default)]
     pub apply_existing: bool,
+    /// Include this channel in the scheduled uptime reports.
+    #[serde(default = "yes")]
+    pub digest: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +80,7 @@ pub struct Notification {
     #[serde(flatten)]
     pub channel: Channel,
     pub is_default: bool,
+    pub digest: bool,
 }
 
 impl Channel {
@@ -100,16 +108,16 @@ impl Channel {
 }
 
 pub fn list(c: &Connection) -> Result<Vec<Notification>> {
-    let mut st = c.prepare_cached("SELECT id, name, kind, config, is_default FROM notifications ORDER BY name")?;
+    let mut st = c.prepare_cached("SELECT id, name, kind, config, is_default, digest FROM notifications ORDER BY name")?;
     let rows = st
         .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get(4)?))
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get(4)?, r.get(5)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows
         .into_iter()
-        .filter_map(|(id, name, kind, config, is_default)| {
-            Some(Notification { id, name, channel: Channel::from_row(&kind, &config)?, is_default })
+        .filter_map(|(id, name, kind, config, is_default, digest)| {
+            Some(Notification { id, name, channel: Channel::from_row(&kind, &config)?, is_default, digest })
         })
         .collect())
 }
@@ -118,8 +126,8 @@ pub fn save(c: &Connection, id: Option<i64>, n: &NotificationInput) -> Result<i6
     let id = match id {
         Some(id) => {
             let changed = c.execute(
-                "UPDATE notifications SET name=?, kind=?, config=?, is_default=? WHERE id=?",
-                rusqlite::params![n.name, n.channel.kind(), n.channel.config_json(), n.is_default, id],
+                "UPDATE notifications SET name=?, kind=?, config=?, is_default=?, digest=? WHERE id=?",
+                rusqlite::params![n.name, n.channel.kind(), n.channel.config_json(), n.is_default, n.digest, id],
             )?;
             if changed == 0 {
                 bail!("Notification not found");
@@ -128,8 +136,8 @@ pub fn save(c: &Connection, id: Option<i64>, n: &NotificationInput) -> Result<i6
         }
         None => {
             c.execute(
-                "INSERT INTO notifications (name, kind, config, is_default) VALUES (?,?,?,?)",
-                rusqlite::params![n.name, n.channel.kind(), n.channel.config_json(), n.is_default],
+                "INSERT INTO notifications (name, kind, config, is_default, digest) VALUES (?,?,?,?,?)",
+                rusqlite::params![n.name, n.channel.kind(), n.channel.config_json(), n.is_default, n.digest],
             )?;
             c.last_insert_rowid()
         }
@@ -165,6 +173,8 @@ pub struct Alert {
     pub body: String,
     pub up: bool,
     pub monitor: Option<serde_json::Value>,
+    /// Offer "mute" / "maintenance" buttons for this monitor (Telegram only).
+    pub buttons_for: Option<i64>,
 }
 
 fn human_duration(ms: i64) -> String {
@@ -185,6 +195,10 @@ fn human_duration(ms: i64) -> String {
 
 /// Called by the scheduler on an UP<->DOWN transition.
 pub async fn monitor_changed(state: &AppState, m: &Monitor, status: u8, message: &str, down_for: Option<i64>) {
+    // Muted or under maintenance: the change is still recorded, just not announced.
+    if state.is_muted(m.id) {
+        return;
+    }
     let up = status == UP;
     let target = match m.cfg.kind {
         MonitorType::Tcp => format!(
@@ -210,8 +224,33 @@ pub async fn monitor_changed(state: &AppState, m: &Monitor, status: u8, message:
         body,
         up,
         monitor: Some(json!({ "id": m.id, "name": m.cfg.name, "target": target })),
+        buttons_for: (!up).then_some(m.id),
     };
     deliver(state, m.id, &alert).await;
+}
+
+/// Send an alert through the channels of several monitors, once per channel.
+pub async fn deliver_many(state: &AppState, monitor_ids: &[i64], alert: &Alert) {
+    let ids = monitor_ids.to_vec();
+    let channels = state
+        .db
+        .call(move |c| {
+            let mut wanted = std::collections::HashSet::new();
+            let mut st = c.prepare("SELECT notification_id FROM monitor_notifications WHERE monitor_id = ?")?;
+            for id in ids {
+                for r in st.query_map([id], |r| r.get::<_, i64>(0))? {
+                    wanted.insert(r?);
+                }
+            }
+            Ok(list(c)?.into_iter().filter(|n| wanted.contains(&n.id)).collect::<Vec<_>>())
+        })
+        .await
+        .unwrap_or_default();
+    for n in channels {
+        if let Err(e) = send(state, &n.channel, alert).await {
+            tracing::warn!("notification failed ({}): {e:#}", n.channel.kind());
+        }
+    }
 }
 
 /// Send an alert through every notification channel attached to a monitor.
@@ -239,11 +278,17 @@ pub async fn send(state: &AppState, ch: &Channel, alert: &Alert) -> Result<()> {
                 .http
                 .post(url)
                 .timeout(timeout)
-                .json(&json!({
-                    "chat_id": cfg.chat_id.trim(),
-                    "text": format!("{}\n{}", alert.title, alert.body),
-                    "disable_web_page_preview": true,
-                }))
+                .json(&{
+                    let mut body = json!({
+                        "chat_id": cfg.chat_id.trim(),
+                        "text": format!("{}\n{}", alert.title, alert.body),
+                        "disable_web_page_preview": true,
+                    });
+                    if let Some(id) = alert.buttons_for {
+                        body["reply_markup"] = crate::telegram::alert_buttons(id);
+                    }
+                    body
+                })
                 .send()
                 .await
                 .context("Could not reach Telegram")?;
@@ -308,7 +353,8 @@ pub fn test_alert(app: &str) -> Alert {
         body: crate::i18n::pick("This channel is configured correctly.", "Bu kanal doğru yapılandırıldı.").into(),
         up: true,
         monitor: None,
-    }
+            buttons_for: None,
+}
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ pub const DOWN: u8 = 0;
 pub const UP: u8 = 1;
 pub const PENDING: u8 = 2;
 pub const PAUSED: u8 = 3;
+pub const MAINT: u8 = 4;
 
 /// Number of recent beats kept in memory per monitor.
 pub const RECENT_BEATS: usize = 60;
@@ -59,6 +60,7 @@ pub fn status_str(s: Option<u8>) -> &'static str {
         Some(UP) => "up",
         Some(PENDING) => "pending",
         Some(PAUSED) => "paused",
+        Some(MAINT) => "maintenance",
         _ => "unknown",
     }
 }
@@ -103,6 +105,10 @@ pub struct AppState {
     pub updater: Arc<crate::update::Updater>,
     /// TLS certificate expiry per HTTPS monitor.
     pub certs: Arc<RwLock<crate::cert::Certs>>,
+    /// Maintenance / mute windows currently in effect, per monitor.
+    pub maint: Arc<RwLock<crate::maintenance::ActiveMap>>,
+    /// Domain registration expiry per registrable domain.
+    pub domains: Arc<RwLock<crate::domain::Domains>>,
 }
 
 impl AppState {

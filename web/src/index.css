@@ -39,6 +39,7 @@
   --down: oklch(0.6 0.21 15);
   --pending: oklch(0.7 0.15 68);
   --paused: oklch(0.6 0.03 256);
+  --maint: oklch(0.58 0.13 235);
   --empty: oklch(0.915 0.004 286);
   --chart: oklch(0.55 0.18 262);
 
@@ -77,6 +78,7 @@
   --down: oklch(0.69 0.19 15);
   --pending: oklch(0.81 0.14 75);
   --paused: oklch(0.64 0.03 256);
+  --maint: oklch(0.74 0.12 235);
   --empty: oklch(0.29 0.006 286);
   --chart: oklch(0.7 0.15 262);
 
@@ -118,6 +120,7 @@
   --color-down: var(--down);
   --color-pending: var(--pending);
   --color-paused: var(--paused);
+  --color-maint: var(--maint);
   --color-empty: var(--empty);
   --color-chart: var(--chart);
   --shadow-xs: var(--shadow-xs);

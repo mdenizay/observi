@@ -148,3 +148,45 @@ The product name and logo are configurable. The server also injects them into `i
   errors `update_not_supported`, `no_update`, `update_in_progress`)
 - `PUT /api/update/settings` (superadmin) `{auto_update}`
 
+## Maintenance and mute windows
+A `maintenance` window marks monitors as under maintenance (status `"maintenance"`, heartbeat `s = 4`, no down/up alerts,
+excluded from uptime). A `mute` window keeps status and uptime but holds back down/up notifications.
+Monitor summaries carry `maintenance: {id, kind, name, until} | null`.
+- `GET /api/maintenance` (superadmin) → `{items: Window[]}`;
+  `Window = {id, name, kind, start_at, end_at, recur: {days: 0..6[], start_min, duration_min, tz_offset_min} | null, all, monitor_ids, group_ids, active, next_start, created_by}`
+- `POST /api/maintenance`, `PUT /api/maintenance/:id` `{name, kind?, start_at?, end_at?, recur?, all?, monitor_ids?, group_ids?}`;
+  `DELETE /api/maintenance/:id`; `POST /api/maintenance/:id/end` (end the current occurrence / cancel a scheduled one-off).
+  Errors: `name_required`, `maintenance_time_invalid`, `maintenance_scope_required`.
+- Quick actions: `POST /api/monitors/bulk` with action `maintenance` / `mute` (+ `duration_min`) or `end_maintenance`.
+
+## Tags
+- Monitors carry `tags: string[]` (send it with `POST`/`PUT /api/monitors`; max 20 per monitor, 30 characters each).
+- `GET /api/tags` → `{items: [{name, count}]}`; bulk actions `tag_add` / `tag_remove` with `tag`.
+
+## Audit log (superadmin)
+- `GET /api/audit?limit=50&before=<id>&action=<prefix>&user=<text>` → `{items: Entry[], next_before}`;
+  `Entry = {id, t, user_id, username, action, target_type, target_id, target_name, ip, details}`.
+  Actions: `auth.login|login_failed|login_blocked|logout|password_changed|profile_updated`, `user.*`, `monitor.create|update|delete|pause|resume|bulk`,
+  `group.*`, `notification.*`, `maintenance.create|update|delete|end`, `settings.branding`, `update.apply|auto`, `telegram.mute|maintenance`.
+  Kept for one year.
+
+## Telegram
+Down alerts sent to a Telegram channel carry buttons (mute 1 h / 24 h, maintenance 1 h). The chats configured as channels also
+answer `/status`, `/down`, `/ssl` and `/help` for the monitors attached to them. Observi long-polls the Bot API, so nothing needs
+to be exposed publicly.
+
+## Domain expiry
+Registration expiry of each monitored domain is looked up server-side (RDAP, falling back to WHOIS; some extensions such as
+`.eu` do not publish it) and checked every 12–24 h. Monitor summaries carry
+`domain: {name, expires_at, days_left, status: "ok"|"expiring"|"expired"|"unknown", registrar, checked_at, error} | null`
+(`expiring` = 30 days or less). Warnings go out at 60, 30, 14, 7 and 1 days, on expiry and on renewal.
+- `GET /api/domains` → `{items: [{name, expires_at, days_left, status, registrar, checked_at, error, monitor_ids}]}`
+- `POST /api/domains/check` (superadmin) — force a fresh lookup of all domains.
+
+## Reports
+- `GET /api/reports/summary?days=7` (1–365) → `{from, to, uptime, incidents, downtime_ms, avg_latency, monitors: [{id, name, group_name, uptime, incidents, downtime_ms, avg_latency}]}`
+  (maintenance and paused time is excluded; regular users only see their monitors).
+- `GET|PUT /api/reports/settings` (superadmin) `{weekly: {enabled, day: 0..6}, monthly: {enabled, day: 1..28}, hour: 0..23, tz_offset_min}`
+  — scheduled digests sent to the notification channels that opted in (`digest: true`), covering the monitors attached to each channel.
+- `POST /api/reports/send` (superadmin) `{period: "weekly"|"monthly"}` → `{sent}` — send now.
+

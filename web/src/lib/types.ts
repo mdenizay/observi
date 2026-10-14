@@ -7,7 +7,7 @@ export interface User {
   role: Role
 }
 
-export type BeatStatus = 0 | 1 | 2 | 3
+export type BeatStatus = 0 | 1 | 2 | 3 | 4
 export interface Beat {
   t: number
   s: BeatStatus
@@ -16,7 +16,7 @@ export interface Beat {
 }
 
 export type MonitorType = 'http' | 'keyword' | 'tcp'
-export type MonitorStatus = 'up' | 'down' | 'pending' | 'paused' | 'unknown'
+export type MonitorStatus = 'up' | 'down' | 'pending' | 'paused' | 'maintenance' | 'unknown'
 
 export interface MonitorSummary {
   id: number
@@ -33,11 +33,118 @@ export interface MonitorSummary {
   message: string | null
   uptime_24h: number | null
   cert: CertInfo | null
+  maintenance: MaintenanceInfo | null
+  domain: DomainInfo | null
+  tags: string[]
   /** Reason the last check's TLS validation failed (site still reachable), else null. */
   ssl_problem: string | null
   group_id: number | null
   group_name: string | null
   beats: Beat[]
+}
+
+export interface DomainInfo {
+  /** Registrable domain, e.g. "example.com.tr". */
+  name: string
+  expires_at: number | null
+  days_left: number | null
+  status: 'ok' | 'expiring' | 'expired' | 'unknown'
+  registrar: string | null
+  checked_at: number
+  error: string | null
+}
+
+export interface DomainItem extends Omit<DomainInfo, 'name'> {
+  name: string
+  monitor_ids: number[]
+}
+
+export interface ReportMonitorRow {
+  id: number
+  name: string
+  group_name: string | null
+  uptime: number | null
+  incidents: number
+  downtime_ms: number
+  avg_latency: number | null
+}
+
+export interface ReportSummary {
+  from: number
+  to: number
+  uptime: number | null
+  incidents: number
+  downtime_ms: number
+  avg_latency: number | null
+  monitors: ReportMonitorRow[]
+}
+
+export interface ReportSettings {
+  weekly: { enabled: boolean; day: number }
+  monthly: { enabled: boolean; day: number }
+  hour: number
+  tz_offset_min: number
+}
+
+export interface MaintenanceInfo {
+  id: number
+  kind: 'maintenance' | 'mute'
+  name: string
+  /** End of the current window (ms); null = recurring/unknown. */
+  until: number | null
+}
+
+export interface MaintenanceRecur {
+  /** 0 = Sunday … 6 = Saturday. */
+  days: number[]
+  /** Minutes after local midnight. */
+  start_min: number
+  duration_min: number
+  tz_offset_min: number
+}
+
+export interface MaintenanceWindow {
+  id: number
+  name: string
+  kind: 'maintenance' | 'mute'
+  start_at: number | null
+  end_at: number | null
+  recur: MaintenanceRecur | null
+  all: boolean
+  monitor_ids: number[]
+  group_ids: number[]
+  active: boolean
+  next_start: number | null
+  created_by: string | null
+}
+
+export interface MaintenanceInput {
+  name: string
+  kind?: 'maintenance' | 'mute'
+  start_at?: number | null
+  end_at?: number | null
+  recur?: MaintenanceRecur | null
+  all?: boolean
+  monitor_ids?: number[]
+  group_ids?: number[]
+}
+
+export interface TagCount {
+  name: string
+  count: number
+}
+
+export interface AuditEntry {
+  id: number
+  t: number
+  user_id: number | null
+  username: string | null
+  action: string
+  target_type: string | null
+  target_id: number | null
+  target_name: string | null
+  ip: string | null
+  details: Record<string, unknown> | null
 }
 
 export interface CertInfo {
@@ -72,6 +179,7 @@ export interface MonitorInput {
   body?: string | null
   description?: string | null
   group_id?: number | null
+  tags?: string[]
   notification_ids: number[]
 }
 
@@ -125,6 +233,8 @@ export interface NotificationInput {
   name: string
   kind: NotificationKind
   is_default: boolean
+  /** Include this channel in scheduled uptime reports (default true). */
+  digest?: boolean
   apply_existing?: boolean
   config: TelegramCfg | SmtpCfg | WebhookCfg
 }
@@ -170,7 +280,15 @@ export interface UpdateInfo {
   last_result: { ok: boolean; version: string; error: string | null; at: number } | null
 }
 
-export type ActivityKind = 'down' | 'up' | 'ssl_expiring' | 'ssl_expired' | 'ssl_renewed'
+export type ActivityKind =
+  | 'down'
+  | 'up'
+  | 'ssl_expiring'
+  | 'ssl_expired'
+  | 'ssl_renewed'
+  | 'domain_expiring'
+  | 'domain_expired'
+  | 'domain_renewed'
 
 export interface Activity {
   id: number
@@ -178,7 +296,18 @@ export interface Activity {
   kind: ActivityKind
   monitor_id: number
   monitor_name: string
-  data: { message?: string; down_for_ms?: number; expires_at?: number; days_left?: number } | null
+  data: { message?: string; down_for_ms?: number; expires_at?: number; days_left?: number; domain?: string } | null
 }
 
-export type BulkAction = 'move' | 'pause' | 'resume' | 'delete' | 'notify_add' | 'notify_remove'
+export type BulkAction =
+  | 'move'
+  | 'pause'
+  | 'resume'
+  | 'delete'
+  | 'notify_add'
+  | 'notify_remove'
+  | 'maintenance'
+  | 'mute'
+  | 'end_maintenance'
+  | 'tag_add'
+  | 'tag_remove'

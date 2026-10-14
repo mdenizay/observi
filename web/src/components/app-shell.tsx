@@ -1,6 +1,6 @@
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { matchPath, NavLink, Outlet, useLocation } from 'react-router'
-import { Bell, ChevronRight, Folder, House, Loader2, Menu, Plus, Search, Settings, Users, type LucideIcon } from 'lucide-react'
+import { BarChart3, Bell, ChevronRight, Folder, House, Loader2, Menu, Plus, Search, Settings, Users, Wrench, type LucideIcon } from 'lucide-react'
 import { ActivityBell } from '@/components/activity-bell'
 import { CommandPalette } from '@/components/command-palette'
 import { Logo } from '@/components/logo'
@@ -25,12 +25,14 @@ interface NavItem {
 
 const monitoring: NavItem[] = [
   { to: '/dashboard', labelKey: 'nav.dashboard', icon: House },
+  { to: '/reports', labelKey: 'nav.reports', icon: BarChart3 },
   { to: '/monitors/new', labelKey: 'nav.newMonitor', icon: Plus, end: true },
 ]
 const settingsItem: NavItem = { to: '/settings', labelKey: 'nav.settings', icon: Settings }
 // Superadmins: Settings closes the Administration group; regular users: it sits under Monitoring.
 const admin: NavItem[] = [
   { to: '/groups', labelKey: 'nav.groups', icon: Folder },
+  { to: '/maintenance', labelKey: 'nav.maintenance', icon: Wrench },
   { to: '/users', labelKey: 'nav.users', icon: Users },
   { to: '/notifications', labelKey: 'nav.notifications', icon: Bell },
   settingsItem,
@@ -95,6 +97,8 @@ function useBreadcrumb(): string[] {
   if (matchPath('/monitors/new', pathname)) return [t('nav.section.monitoring'), t('nav.newMonitor')]
   if (matchPath('/monitors/:id/edit', pathname)) return [t('nav.section.monitoring'), t('mf.titleEdit')]
   if (matchPath('/groups', pathname)) return [t('nav.section.admin'), t('nav.groups')]
+  if (matchPath('/reports', pathname)) return [t('nav.section.monitoring'), t('nav.reports')]
+  if (matchPath('/maintenance', pathname)) return [t('nav.section.admin'), t('nav.maintenance')]
   if (matchPath('/users', pathname)) return [t('nav.section.admin'), t('nav.users')]
   if (matchPath('/notifications', pathname)) return [t('nav.section.admin'), t('nav.notifications')]
   if (matchPath('/settings', pathname)) return [t('nav.settings')]

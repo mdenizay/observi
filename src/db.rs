@@ -92,6 +92,58 @@ CREATE TABLE IF NOT EXISTS activity (
     data TEXT
 );
 CREATE INDEX IF NOT EXISTS activity_t ON activity (t);
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    t INTEGER NOT NULL,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id INTEGER,
+    target_name TEXT,
+    ip TEXT,
+    details TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_t ON audit (t);
+CREATE TABLE IF NOT EXISTS maintenance (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'maintenance',
+    start_at INTEGER,
+    end_at INTEGER,
+    recur TEXT,
+    all_monitors INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    disabled_until INTEGER
+);
+CREATE TABLE IF NOT EXISTS maintenance_monitors (
+    maintenance_id INTEGER NOT NULL REFERENCES maintenance(id) ON DELETE CASCADE,
+    monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+    PRIMARY KEY (maintenance_id, monitor_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS maintenance_groups (
+    maintenance_id INTEGER NOT NULL REFERENCES maintenance(id) ON DELETE CASCADE,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (maintenance_id, group_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS monitor_tags (
+    monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (monitor_id, tag_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS domains (
+    domain TEXT PRIMARY KEY,
+    expires_at INTEGER,
+    registrar TEXT,
+    checked_at INTEGER NOT NULL,
+    alerted_level INTEGER NOT NULL DEFAULT 99,
+    error TEXT
+);
 CREATE TABLE IF NOT EXISTS certs (
     monitor_id INTEGER PRIMARY KEY REFERENCES monitors(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL,
@@ -158,6 +210,14 @@ fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "ALTER TABLE monitors ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL;",
         )?;
+    }
+    let has_digest: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('notifications') WHERE name = 'digest')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_digest {
+        conn.execute_batch("ALTER TABLE notifications ADD COLUMN digest INTEGER NOT NULL DEFAULT 1;")?;
     }
     crate::activity::backfill(conn)?;
     Ok(())

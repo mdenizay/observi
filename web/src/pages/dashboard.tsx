@@ -12,6 +12,7 @@ import {
   PauseCircle,
   Plus,
   Search,
+  Wrench,
   ShieldAlert,
   X,
   type LucideIcon,
@@ -20,8 +21,12 @@ import { EmptyState } from '@/components/empty-state'
 import { HeartbeatBar } from '@/components/heartbeat-bar'
 import { MonitorDetail } from '@/components/monitor-detail'
 import { Sparkline } from '@/components/sparkline'
+import { MuteBadge } from '@/components/maintenance-ui'
+import { maintenanceTip } from '@/lib/maintenance'
+import { DomainBadge } from '@/components/domain-badge'
 import { SslBadge } from '@/components/ssl-badge'
-import { sslIsBad, sslNeedsAttention } from '@/lib/cert'
+import { TagChips, TagFilter } from '@/components/tags'
+import { expiryIsBad, expiryNeedsAttention } from '@/lib/cert'
 import { StatusBadge, statusDot } from '@/components/status-badge'
 import { BulkBar } from '@/components/bulk-bar'
 import { Button } from '@/components/ui/button'
@@ -40,23 +45,24 @@ import { formatLatency, formatNumber, formatRelative, formatUptime, monitorTarge
 import type { Group, MonitorSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type Eff = 'up' | 'down' | 'pending' | 'paused'
+type Eff = 'up' | 'down' | 'pending' | 'paused' | 'maintenance'
 type Sort = 'status' | 'name' | 'slowest'
 type View = 'grid' | 'list'
 
 function effectiveStatus(m: MonitorSummary): Eff {
   if (!m.active) return 'paused'
-  if (m.status === 'up' || m.status === 'down' || m.status === 'paused') return m.status
+  if (m.status === 'up' || m.status === 'down' || m.status === 'paused' || m.status === 'maintenance') return m.status
   return 'pending' // pending + unknown
 }
 
-const statusOrder: Record<Eff, number> = { down: 0, pending: 1, up: 2, paused: 3 }
+const statusOrder: Record<Eff, number> = { down: 0, pending: 1, maintenance: 2, up: 3, paused: 4 }
 
 const tileStyle: Record<Eff, { icon: LucideIcon; text: string; active: string }> = {
   up: { icon: ArrowUpCircle, text: 'text-up', active: 'border-up/45 bg-up/[0.06] ring-up/25' },
   down: { icon: ArrowDownCircle, text: 'text-down', active: 'border-down/45 bg-down/[0.06] ring-down/25' },
   pending: { icon: Clock, text: 'text-pending', active: 'border-pending/45 bg-pending/[0.06] ring-pending/25' },
   paused: { icon: PauseCircle, text: 'text-paused', active: 'border-paused/45 bg-paused/[0.06] ring-paused/25' },
+  maintenance: { icon: Wrench, text: 'text-maint', active: 'border-maint/45 bg-maint/[0.06] ring-maint/25' },
 }
 
 function readView(): View {
@@ -90,7 +96,8 @@ function StatusTiles({
   ssl: SslTileData
 }) {
   const { t } = useI18n()
-  const order: Eff[] = ['up', 'down', 'pending', 'paused']
+  const order: Eff[] = ['up', 'down', 'pending', 'paused', ...(counts.maintenance > 0 || filter === 'maintenance' ? (['maintenance'] as Eff[]) : [])]
+  const six = order.length === 5
 
   const tile = (p: {
     key: string
@@ -132,7 +139,7 @@ function StatusTiles({
 
   const sslTone = ssl.count === 0 ? null : ssl.bad ? 'down' : 'pending'
   return (
-    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-5">
+    <div className={cn('grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3', six ? 'lg:grid-cols-6' : 'lg:grid-cols-5')}>
       {order.map((s) => {
         const st = tileStyle[s]
         return tile({
@@ -149,7 +156,7 @@ function StatusTiles({
       })}
       {tile({
         key: 'ssl',
-        label: t('ssl.label'),
+        label: t('expiry.label'),
         dot: sslTone === 'down' ? 'bg-down' : sslTone === 'pending' ? 'bg-pending' : 'bg-muted-foreground/40',
         count: ssl.count,
         text: sslTone === 'down' ? 'text-down' : 'text-pending',
@@ -157,8 +164,8 @@ function StatusTiles({
         active: ssl.active,
         activeCls: sslTone === 'down' ? 'border-down/45 bg-down/[0.06] ring-down/25' : 'border-pending/45 bg-pending/[0.06] ring-pending/25',
         onClick: ssl.onToggle,
-        className: 'col-span-2 sm:col-span-1',
-        title: t('ssl.filterTip'),
+        className: six ? undefined : 'col-span-2 sm:col-span-1',
+        title: t('expiry.tip'),
       })}
     </div>
   )
@@ -229,6 +236,7 @@ const MonitorCard = memo(function MonitorCard({
       className={cn(
         'h-full w-full bg-card shadow-card focus-visible:ring-ring/50 hover:shadow-raised hover:border-border-strong flex min-w-0 flex-col gap-3 rounded-xl border p-4 text-left transition-[border-color,box-shadow,background-color] duration-150 outline-none focus-visible:ring-[3px]',
         status === 'down' && 'border-down/40 bg-down/[0.045] hover:border-down/60',
+        status === 'maintenance' && 'border-maint/40 bg-maint/[0.05] hover:border-maint/60',
         paused && 'opacity-60 hover:opacity-90',
         selected && 'ring-primary/50 border-primary/50 ring-2',
         checked && checkedCard,
@@ -237,10 +245,19 @@ const MonitorCard = memo(function MonitorCard({
       <div className="flex items-center gap-2.5">
         <span className={cn('size-2 shrink-0 rounded-full', statusDot[status])} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{m.name}</span>
+        <MuteBadge info={m.maintenance} />
         <SslBadge monitor={m} className="max-w-[7.5rem]" />
-        <StatusBadge status={status} className="shrink-0" />
+        <DomainBadge monitor={m} className="max-w-[7.5rem]" />
+        <StatusBadge
+          status={status}
+          className="shrink-0"
+          title={m.maintenance?.kind === 'maintenance' ? maintenanceTip(m.maintenance, t) : undefined}
+        />
       </div>
-      <div className="text-muted-foreground -mt-1.5 h-4 truncate text-xs leading-4">{monitorTarget(m) || '—'}</div>
+      <div className="-mt-1.5 flex h-5 min-w-0 items-center gap-2">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{monitorTarget(m) || '—'}</span>
+        <TagChips tags={m.tags} max={2} className="max-w-[55%] shrink-0" />
+      </div>
       <HeartbeatBar beats={m.beats} max={40} size="sm" stretch />
       <div className="text-muted-foreground grid grid-cols-[1fr_1fr_1.5fr] gap-2 border-t pt-2.5 text-xs whitespace-nowrap">
         <span className="num text-foreground truncate font-medium" title={t('detail.latencyNow')}>
@@ -362,6 +379,7 @@ const MonitorRow = memo(function MonitorRow({
         selectable ? 'pr-4 pl-11' : 'px-4',
         'hover:bg-accent/50 focus-visible:bg-accent/60 w-full border-b py-2.5 text-left transition-colors duration-150 outline-none last:rounded-b-xl last:border-b-0',
         status === 'down' && 'bg-down/[0.045] hover:bg-down/[0.08]',
+        status === 'maintenance' && 'bg-maint/[0.05] hover:bg-maint/[0.09]',
         paused && 'text-muted-foreground',
         selected && 'bg-primary/[0.07] hover:bg-primary/10',
         checked && 'bg-primary/[0.08] hover:bg-primary/[0.11]',
@@ -372,9 +390,14 @@ const MonitorRow = memo(function MonitorRow({
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{m.name}</span>
+            <MuteBadge info={m.maintenance} />
             <SslBadge monitor={m} className="max-w-[7rem]" />
+            <DomainBadge monitor={m} className="max-w-[7rem]" />
           </div>
-          <div className="text-muted-foreground truncate text-xs">{monitorTarget(m) || '—'}</div>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-muted-foreground min-w-0 truncate text-xs">{monitorTarget(m) || '—'}</span>
+            <TagChips tags={m.tags} max={3} className="hidden shrink-0 sm:flex" />
+          </div>
         </div>
       </div>
       <div className="hidden min-w-0 md:block">
@@ -446,6 +469,7 @@ function groupDot(monitors: MonitorSummary[]) {
   const st = monitors.map(effectiveStatus)
   if (st.includes('down')) return 'bg-down'
   if (st.includes('pending')) return 'bg-pending'
+  if (st.includes('maintenance')) return 'bg-maint'
   if (st.every((s) => s === 'paused')) return 'bg-paused'
   return 'bg-up'
 }
@@ -465,6 +489,7 @@ export function DashboardPage() {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Eff | null>(null)
   const [sslOnly, setSslOnly] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [sort, setSort] = useState<Sort>('status')
   const [view, setViewState] = useState<View>(readView)
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
@@ -473,7 +498,7 @@ export function DashboardPage() {
   const selRef = useRef(sel)
   const orderRef = useRef<number[]>([])
   const anchorRef = useRef<number | null>(null)
-  const narrowing = q.trim() !== '' || filter !== null || sslOnly
+  const narrowing = q.trim() !== '' || filter !== null || sslOnly || tagFilter.length > 0
 
   const setView = (v: View) => {
     setViewState(v)
@@ -484,11 +509,11 @@ export function DashboardPage() {
     }
   }
 
-  const sslCount = useMemo(() => (monitors ?? []).filter(sslNeedsAttention).length, [monitors])
-  const sslExpired = useMemo(() => (monitors ?? []).some(sslIsBad), [monitors])
+  const sslCount = useMemo(() => (monitors ?? []).filter(expiryNeedsAttention).length, [monitors])
+  const sslExpired = useMemo(() => (monitors ?? []).some(expiryIsBad), [monitors])
 
   const counts = useMemo(() => {
-    const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0 }
+    const c: Record<Eff, number> = { up: 0, down: 0, pending: 0, paused: 0, maintenance: 0 }
     for (const m of monitors ?? []) c[effectiveStatus(m)]++
     return c
   }, [monitors])
@@ -512,12 +537,14 @@ export function DashboardPage() {
     const byName = (a: MonitorSummary, b: MonitorSummary) => a.name.localeCompare(b.name, lang)
     return (monitors ?? [])
       .filter((m) => filter === null || effectiveStatus(m) === filter)
-      .filter((m) => !sslOnly || sslNeedsAttention(m))
+      .filter((m) => !sslOnly || expiryNeedsAttention(m))
+      .filter((m) => tagFilter.length === 0 || (m.tags ?? []).some((x) => tagFilter.includes(x)))
       .filter(
         (m) =>
           !term ||
           m.name.toLocaleLowerCase(lang).includes(term) ||
-          monitorTarget(m).toLocaleLowerCase(lang).includes(term),
+          monitorTarget(m).toLocaleLowerCase(lang).includes(term) ||
+          (m.tags ?? []).some((x) => x.toLocaleLowerCase(lang).includes(term)),
       )
       .sort((a, b) => {
         if (sort === 'name') return byName(a, b)
@@ -528,7 +555,7 @@ export function DashboardPage() {
         }
         return statusOrder[effectiveStatus(a)] - statusOrder[effectiveStatus(b)] || byName(a, b)
       })
-  }, [monitors, q, filter, sslOnly, sort, lang])
+  }, [monitors, q, filter, sslOnly, tagFilter, sort, lang])
 
   // null = no groups at all → flat layout without headers.
   const grouped = useMemo<MonitorGroupView[] | null>(() => {
@@ -633,6 +660,7 @@ export function DashboardPage() {
     setQ('')
     setFilter(null)
     setSslOnly(false)
+    setTagFilter([])
   }
 
   const selected = monitors?.find((m) => m.id === selectedId)
@@ -748,6 +776,7 @@ export function DashboardPage() {
           )}
         </div>
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <TagFilter value={tagFilter} onChange={setTagFilter} />
           <label className="flex items-center gap-2">
             <span className="text-muted-foreground text-xs">{t('dash.sort')}</span>
             <select
@@ -861,7 +890,12 @@ export function DashboardPage() {
           })
         : filtered.length > 0 && renderMonitors(filtered)}
 
-      {isAdmin && selIds.length > 0 && <BulkBar ids={selIds} onClear={clearSel} groupName={groupName} />}
+      {isAdmin && selIds.length > 0 && <BulkBar
+          ids={selIds}
+          onClear={clearSel}
+          groupName={groupName}
+          anyMaintenance={(monitors ?? []).some((m) => sel.has(m.id) && !!m.maintenance)}
+        />}
 
       {/* Detail drawer (route-driven) */}
       <Sheet open={selected !== undefined} onOpenChange={(o) => !o && closeDrawer()}>

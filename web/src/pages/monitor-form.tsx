@@ -18,12 +18,15 @@ import { api, errorMessage } from '@/lib/api'
 import type { Monitor, MonitorInput, MonitorType } from '@/lib/types'
 import { kindIcon } from '@/components/kind-icon'
 import { GroupCombobox } from '@/components/group-combobox'
+import { TagsInput } from '@/components/tags'
+import { TemplatePicker } from '@/components/template-picker'
+import { applyPath, applyTemplate, type MonitorTemplate } from '@/lib/templates'
 import { cn } from '@/lib/utils'
 import { translate, useI18n } from '@/i18n'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
-interface FormState {
+export interface FormState {
   type: MonitorType
   name: string
   url: string
@@ -44,6 +47,7 @@ interface FormState {
   body: string
   description: string
   group_id: string // '' = grupsuz
+  tags: string[]
   notification_ids: number[]
 }
 
@@ -76,6 +80,7 @@ const defaults: FormState = {
   body: '',
   description: '',
   group_id: NO_GROUP,
+  tags: [],
   notification_ids: [],
 }
 
@@ -101,6 +106,7 @@ function fromMonitor(m: Monitor): FormState {
     body: m.body ?? '',
     description: m.description ?? '',
     group_id: m.group_id != null ? String(m.group_id) : NO_GROUP,
+    tags: m.tags ?? [],
     notification_ids: m.notification_ids ?? [],
   }
 }
@@ -160,6 +166,7 @@ function toInput(f: FormState): MonitorInput {
     body: null,
     description: f.description.trim() || null,
     group_id: f.group_id === NO_GROUP ? null : Number(f.group_id),
+    tags: f.tags,
     notification_ids: f.notification_ids,
   }
   if (f.type === 'tcp') {
@@ -198,6 +205,25 @@ export function MonitorFormPage() {
   const [loaded, setLoaded] = useState(!isEdit)
   const [defaultsApplied, setDefaultsApplied] = useState(isEdit)
   const [advanced, setAdvanced] = useState(false)
+  const [templateId, setTemplateId] = useState<string | null>(null)
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
+  const [appliedPath, setAppliedPath] = useState<string | null>(null)
+
+  const pickTemplate = (tpl: MonitorTemplate | null) => {
+    setTemplateId(tpl?.id ?? null)
+    if (!tpl) {
+      setPendingPath(null)
+      setAppliedPath(null)
+      return
+    }
+    const before = form.url
+    const r = applyTemplate(form, tpl)
+    setForm(r.form)
+    setPendingPath(r.pendingPath)
+    setAppliedPath(!r.pendingPath && tpl.path && r.form.url !== before ? tpl.path : null)
+    if (r.form.headers) setAdvanced(true)
+    toast.success(t('tpl.applied', { name: t(tpl.name) }))
+  }
   const [saving, setSaving] = useState(false)
 
   // Populate when editing.
@@ -225,7 +251,7 @@ export function MonitorFormPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const errs = validate(form)
+    const errs = validate(form.type !== 'tcp' && pendingPath ? { ...form, url: applyPath(form.url, pendingPath) } : form)
     setErrors(errs)
     if (Object.keys(errs).length) {
       if (errs.headers) setAdvanced(true)
@@ -234,7 +260,7 @@ export function MonitorFormPage() {
     }
     setSaving(true)
     try {
-      const input = toInput(form)
+      const input = toInput(form.type !== 'tcp' && pendingPath ? { ...form, url: applyPath(form.url, pendingPath) } : form)
       const saved = isEdit ? await api.updateMonitor(editId!, input) : await api.createMonitor(input)
       toast.success(isEdit ? t('mf.updated') : t('mf.created'))
       if (saved) qc.setQueryData(['monitor', saved.id], saved)
@@ -274,6 +300,8 @@ export function MonitorFormPage() {
           </Button>
         }
       />
+
+      {!isEdit && loaded && <TemplatePicker activeId={templateId} onPick={pickTemplate} />}
 
       {!loaded ? (
         <Card className="lg:max-w-[50%]">
@@ -352,11 +380,17 @@ export function MonitorFormPage() {
                           type="url"
                           inputMode="url"
                           value={form.url}
-                          onChange={(e) => set('url', e.target.value)}
+                          onChange={(e) => {
+                            set('url', e.target.value)
+                            setAppliedPath(null)
+                          }}
                           placeholder={t('mf.urlPlaceholder')}
                           aria-invalid={!!errors.url}
                         />
                       </div>
+                      {(pendingPath || appliedPath) && !errors.url && (
+                        <p className="text-muted-foreground mt-1.5 text-xs">{t('tpl.pathHint', { path: pendingPath ?? appliedPath ?? '' })}</p>
+                      )}
                     </Field>
                     {form.type === 'keyword' && (
                       <>
@@ -410,6 +444,10 @@ export function MonitorFormPage() {
 
                 <Field label={t('mf.group')} htmlFor="group" className="sm:col-span-2">
                   <GroupCombobox id="group" value={form.group_id} onChange={(v) => set('group_id', v)} fallbackName={monitor.data?.group_name} />
+                </Field>
+
+                <Field label={t('tags.label')} htmlFor="tags" hint={t('tags.hint')} className="sm:col-span-2">
+                  <TagsInput id="tags" value={form.tags} onChange={(v) => set('tags', v)} />
                 </Field>
 
                 <Field label={t('mf.description')} htmlFor="description" className="sm:col-span-2">

@@ -78,7 +78,7 @@ pub struct UpdateResult {
 #[derive(Serialize)]
 pub struct Status {
     current: &'static str,
-    latest: Option<String>,
+    pub latest: Option<String>,
     available: bool,
     release_url: Option<String>,
     published_at: Option<i64>,
@@ -127,7 +127,7 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 }
 
 /// Minimal RFC 3339 parser for GitHub timestamps ("2026-10-13T16:21:33Z").
-fn parse_rfc3339(s: &str) -> Option<i64> {
+pub(crate) fn parse_rfc3339(s: &str) -> Option<i64> {
     let (date, time) = s.trim_end_matches('Z').split_once('T')?;
     let mut d = date.split('-').map(|p| p.parse::<i64>().ok());
     let (y, m, day) = (d.next()??, d.next()??, d.next()??);

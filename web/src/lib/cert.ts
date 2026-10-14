@@ -25,3 +25,14 @@ export function sslReasonLabel(reason: string): string {
   const key = reasonKeys[reason]
   return key ? translate(key) : reason
 }
+
+type DomainField = Pick<MonitorSummary, 'domain'>
+
+/** Domain registration that is expiring (≤30 days) or expired. */
+export const domainNeedsAttention = (m: DomainField) => m.domain?.status === 'expiring' || m.domain?.status === 'expired'
+
+/** Anything about SSL or the domain registration that needs attention. */
+export const expiryNeedsAttention = (m: SslFields & DomainField) => sslNeedsAttention(m) || domainNeedsAttention(m)
+
+/** Red-worthy: expired/invalid certificate or an expired domain. */
+export const expiryIsBad = (m: SslFields & DomainField) => sslIsBad(m) || m.domain?.status === 'expired'

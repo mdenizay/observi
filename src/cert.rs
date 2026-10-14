@@ -306,6 +306,7 @@ async fn announce(state: &AppState, m: &Monitor, entry: &CertEntry, notice: Noti
         body,
         up,
         monitor: Some(serde_json::json!({ "id": m.id, "name": m.cfg.name, "cert_expires_at": entry.expires_at })),
+        buttons_for: None,
     };
     notify::deliver(state, m.id, &alert).await;
 }
